@@ -50,7 +50,7 @@ while (my $fname = shift @ARGV) {
   while (<INFILE>) {
     my @words = split /\s+/, $_;
     foreach (@words) {
-      push @floats, $1 if (/([-+]?\d+\.?((\d)*e?[-+]?\d+)?)/);
+      push @floats, $1 if (/([-+]?\d+\.?(\d*e?[-+]?\d+)?)/);
     }
   }
   my $nfloat = @floats;
