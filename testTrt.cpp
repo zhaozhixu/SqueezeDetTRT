@@ -35,6 +35,7 @@ static const int INPUT_W = 1248;
 static const int CONVOUT_H = 24;
 static const int CONVOUT_W = 78;
 static const int OUTPUT_CLS_SIZE = 3;
+static const int OUTPUT_BBOX_SIZE = 4;
 
 const char* INPUT_BLOB_NAME0 = "data";
 const char* CONVOUT_BLOB_NAME0 = "class_slice";
@@ -261,6 +262,80 @@ createConvEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
 	return engine;
 }
 
+class Reshape: public IPlugin
+{
+public:
+    Reshape(Dims newDim): mNewDim(newDim) {
+    }
+
+    Reshape(const void* data, size_t length) {
+        const char* d = reinterpret_cast<const char*>(data), *a = d;
+        mNewDim = read<Dims>(d);
+        mCopySize = read<size_t>(d);
+        assert(d == a + length);
+    }
+
+    int getNbOutputs() const override {
+        return 1;
+    }
+
+	Dims getOutputDimensions(int index, const Dims* inputDims, int nbInputDims) override {
+        assert(nbInputDims == 1);
+        assert(index == 0);
+        assert(inputDims[index].nbDims == 4);
+        assert((inputDims[0].d[0])*(inputDims[0].d[1])*(inputDims[0].d[2])*(inputDims[0].d[3]) == (mNewDim[0].d[0])*(mNewDim[0].d[1])*(mNewDim[0].d[2])*(mNewDim[0].d[3]));
+        return mNewDim;
+    }
+
+	int initialize() override {
+        return 0;
+    }
+
+	void terminate() override {
+    }
+
+	size_t getWorkspaceSize(int) const override {
+        return 0;
+    }
+
+	// currently it is not possible for a plugin to execute "in place". Therefore we memcpy the data from the input to the output buffer
+	int enqueue(int batchSize, const void*const *inputs, void** outputs, void*, cudaStream_t stream) override {
+        CHECK(cudaMemcpyAsync(outputs[0], inputs[0], mCopySize * batchSize, cudaMemcpyDeviceToDevice, stream));
+        return 0;
+    }
+
+	size_t getSerializationSize() override {
+        return sizeof(mCopySize) + sizeof(mNewDim);
+    }
+
+	void serialize(void* buffer) override {
+        char* d = reinterpret_cast<char*>(buffer), *a = d;
+		write(d, mNewDim);
+		write(d, mCopySize);
+		assert(d == a + getSerializationSize());
+    }
+
+    void configure(const Dims*inputDims, int nbInputs, const Dims* outputDims, int nbOutputs, int)	override {
+        mCopySize = inputDims[0].d[0] * inputDims[0].d[1] * inputDims[0].d[2] * inputDims[0].d[3] * sizeof(float);
+    }
+
+private:
+	template<typename T> void write(char*& buffer, const T& val) {
+        *reinterpret_cast<T*>(buffer) = val;
+        buffer += sizeof(T);
+    }
+
+	template<typename T> T read(const char*& buffer) {
+        T val = *reinterpret_cast<const T*>(buffer);
+        buffer += sizeof(T);
+        return val;
+    }
+
+    Dims mNewDim;
+    size_t mCopySize;
+}
+
+
 ICudaEngine *
 createInterpretEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
 {
@@ -273,12 +348,21 @@ createInterpretEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
     auto bbox_delta_tensor = network->addInput(CONVOUT_BLOB_NAME2, dt, DimsNCHW{INPUT_N, 36, CONVOUT_H, CONVOUT_W});
     assert(bbox_delta_tensor != nullptr);
 
-    auto class_reshape = network->addReshape(*class_tensor, DimsCHW{OUTPUT_CLS_SIZE, 1, 336960});
+    auto class_reshape1 = network->addReshape(*class_tensor, DimsCHW{OUTPUT_CLS_SIZE, 1, 336960});
     assert(class_reshape != nullptr);
     auto class_softmax = network->addSoftMax(*class_reshape->getOutput(0));
     assert(class_softmax != nullptr);
+    auto class_reshape2 = network->addReshape(*class_softmax->getOutput(0), DimsNCHW{INPUT_N, OUTPUT_CLS_SIZE, 1, 16848});
+    assert(class_reshape2 != nullptr);
+    auto pred_class_probs = class_reshape2;
 
-    auto confidence_reshape = network->addReshape(*confidence_tensor, DimsCHW{}
+    auto conf_reshape = network->addReshape(*confidence_tensor, DimsNCHW{INPUT_N, 1, 1, 16848});
+    assert(conf_reshape != nullptr);
+    auto pred_conf = network->addActivation(*conf_reshape->getOutput(0), ActivationType::kSIGMOID);
+    assert(pred_conf != nullptr);
+
+    auto pred_bbox_delta = network->addReshape(*bbox_delta_tensor, DimsNCHW{INPUT_N, OUTPUT_BBOX_SIZE, 1, 16848});
+    assert(pred_bbox_delta != nullptr);
 
 	auto conv1 = network->addConvolution(*data->getOutput(0), 64, DimsHW{3, 3},
 										 weightMap["conv1filter"],
