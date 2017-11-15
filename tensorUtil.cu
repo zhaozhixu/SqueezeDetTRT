@@ -5,10 +5,10 @@ static void assertTensor(Tensor *tensor)
 {
      assert(tensor && tensor->data);
      assert(tensor->ndim < MAXDIM && tensor->ndim > 0);
-     assert(tensor->len == computeLength(tensor->dims, tensor->ndim));
+     assert(tensor->len == computeLength(tensor->ndim, tensor->dims));
 }
 
-int computeLength(int *dims, int ndim)
+int computeLength(int ndim, int *dims)
 {
      assert(dims);
      int i, len = 1;
@@ -22,20 +22,22 @@ Tensor *createTensor(float *data, int ndim, int *dims)
      Tensor *t = (Tensor *)malloc(sizeof(Tensor));
      t->data = data;
      t->ndim = ndim;
-     t->dims = dims;
-     t->len = computeLength(dims, ndim);
+     t->dims = (int *)malloc(sizeof(int) * ndim);
+     memmove(t->dims, dims, sizeof(int) * ndim);
+     t->len = computeLength(ndim, dims);
      return t;
 }
 
 void printTensor(Tensor *tensor, const char *fmt)
 {
      assertTensor(tensor);
-     int i, j, k, dim_sizes[MAXDIM], dim_levels[MAXDIM];
-     int ndim = tensor->ndim, len = tensor->len, *dims = tensor->dims;
+     int dim_sizes[MAXDIM], dim_levels[MAXDIM]; /* dimision size and how deep current chars go */
+     int ndim = tensor->ndim, len = tensor->len, *dims = tensor->dims; /* pointer short cut */
      float *data = tensor->data;
-     char left_buf[MAXDIM+1], right_buf[MAXDIM+1];
+     char left_buf[MAXDIM+1], right_buf[MAXDIM+1]; /* buffer for brackets */
      char *lp = left_buf, *rp = right_buf;
      size_t right_len;
+     int i, j, k;
 
      dim_sizes[ndim-1] = tensor->dims[ndim-1];
      dim_levels[ndim-1] = 0;
@@ -85,7 +87,7 @@ Tensor *sliceTensor(Tensor *src, int dim, int start, int len)
      assert(dim <= MAXDIM);
      assert(len+start <= src->dims[dim]);
 
-     Tensor *dst = (Tensor *)malloc(sizeof(Tensor));
+     Tensor *dst = (Tensor *)malloc(sizeof(Tensor)); /* new tensor */
      dst->ndim = src->ndim;
      dst->dims = (int *)malloc(sizeof(int) * dst->ndim);
      memmove(dst->dims, src->dims, sizeof(int) * dst->ndim);
@@ -93,7 +95,7 @@ Tensor *sliceTensor(Tensor *src, int dim, int start, int len)
      dst->len = src->len / src->dims[dim] * len;
      dst->data = (float *)malloc(dst->len * sizeof(float));
 
-     int i, block_size, block_num;
+     int i, block_size, block_num; /* block size and number for copy operation */
      for (i = dim+1, block_size = 1; i < dst->ndim; i++)
           block_size *= dst->dims[i];
      for (i = 0, block_num = 1; i <= dim; i++)
@@ -116,7 +118,7 @@ Tensor *sliceTensorCuda(Tensor *src, int dim, int start, int len)
      assert(dim <= MAXDIM);
      assert(len+start <= src->dims[dim]);
 
-     Tensor *dst = (Tensor *)malloc(sizeof(Tensor));
+     Tensor *dst = (Tensor *)malloc(sizeof(Tensor)); /* new tensor */
      dst->ndim = src->ndim;
      dst->dims = (int *)malloc(sizeof(int) * dst->ndim);
      memmove(dst->dims, src->dims, sizeof(int) * dst->ndim);
@@ -124,7 +126,7 @@ Tensor *sliceTensorCuda(Tensor *src, int dim, int start, int len)
      dst->len = src->len / src->dims[dim] * len;
      cudaMalloc(&dst->data, sizeof(float) * dst->len);
 
-     int i, block_size, block_num;
+     int i, block_size, block_num; /* block size and number of cuda threads */
      int ddim = dst->dims[dim], sdim = src->dims[dim];
      for (i = dim+1, block_size = 1; i < dst->ndim; i++)
           block_size *= dst->dims[i];
@@ -136,6 +138,7 @@ Tensor *sliceTensorCuda(Tensor *src, int dim, int start, int len)
      return dst;
 }
 
+/* (not use) sliceTensor cuda version using cudaMemcpy, like CPU version. Very slow. */
 Tensor *sliceTensorCuda2(Tensor *src, int dim, int start, int len)
 {
      assertTensor(src);
@@ -166,4 +169,45 @@ Tensor *sliceTensorCuda2(Tensor *src, int dim, int start, int len)
      }
 
      return dst;
+}
+
+/* in-place reshape tensor */
+Tensor *reshapeTensor(Tensor *src, int newNdim, int *newDims)
+{
+     assertTensor(src);
+     assert(newDims);
+     assert(src->len == computeLength(newNdim, newDims));
+     Tensor *dst = createTensor(src->data, newNdim, newDims); /* new tensor */
+     return dst;
+}
+
+/* current only support dim = src->dims[src->ndim-1] */
+void *reduceArgMax(Tensor *src, Tensor *dst, Tensor *arg, int dim)
+{
+     assertTensor(src);
+     assert(dim < src->ndim);
+     assert(dim == src->ndim-1); /* TODO: get rid of this limit */
+
+     dst = (Tensor *)malloc(sizeof(Tensor));
+     dst->ndim = src->ndim;
+     dst->dims = (int *)malloc(sizeof(int) * dst->ndim);
+     memmove(dst->dims, src->dims, sizeof(int) * dst->ndim);
+     dst->dims[dim] = 1;
+     dst->len = computeLength(dst->ndim, dst->dims);
+     dst->data = (float *)malloc(sizeof(float) * dst->len);
+
+     arg = (Tensor *)malloc(sizeof(Tensor));
+     arg->ndim = dst->ndim;
+     arg->dims = (int *)malloc(sizeof(int) * arg->ndim);
+     memmove(arg->dims, dst->dims, sizeof(int) * arg->ndim);
+     arg->len = dst->len;
+     arg->data = (float *)malloc(sizeof(float) * arg->len);
+
+     int i, thread_num, block_size, block_num;
+     for (i = 0, thread_num = 1; i < dim; i++)
+          thread_num *= dst->dims[i];
+     block_size = MAX_THREADS_PER_BLOCK;
+     block_num = thread_num / block_size + 1;
+
+     reduceArgMaxKernel<<<block_num, block_size>>>(src->data, dst->data, arg->data, src->dims[dim], block_size);
 }

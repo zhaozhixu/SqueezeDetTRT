@@ -335,7 +335,6 @@ private:
     size_t mCopySize;
 }
 
-
 ICudaEngine *
 createInterpretEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
 {
@@ -348,7 +347,9 @@ createInterpretEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
     auto bbox_delta_tensor = network->addInput(CONVOUT_BLOB_NAME2, dt, DimsNCHW{INPUT_N, 36, CONVOUT_H, CONVOUT_W});
     assert(bbox_delta_tensor != nullptr);
 
-    auto class_reshape1 = network->addReshape(*class_tensor, DimsCHW{OUTPUT_CLS_SIZE, 1, 336960});
+    Reshape *class_reshape1_plugin = new Reshape(DimsCHW{OUTPUT_CLS_SIZE, 1, 336960});
+
+    auto class_reshape1 = network->addReshape(*class_tensor, );
     assert(class_reshape != nullptr);
     auto class_softmax = network->addSoftMax(*class_reshape->getOutput(0));
     assert(class_softmax != nullptr);
@@ -363,14 +364,6 @@ createInterpretEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
 
     auto pred_bbox_delta = network->addReshape(*bbox_delta_tensor, DimsNCHW{INPUT_N, OUTPUT_BBOX_SIZE, 1, 16848});
     assert(pred_bbox_delta != nullptr);
-
-	auto conv1 = network->addConvolution(*data->getOutput(0), 64, DimsHW{3, 3},
-										 weightMap["conv1filter"],
-										 weightMap["conv1bias"]);
-	assert(conv1 != nullptr);
-	conv1->setStride(DimsHW{2, 2});
-    auto relu1 = network->addActivation(*conv1->getOutput(0), ActivationType::kRELU);
-    assert(relu1 != nullptr);
 
     prob->getOutput(0)->setName(OUTPUT_BLOB_NAME);
 	network->markOutput(*prob->getOutput(0));
