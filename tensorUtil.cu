@@ -1,5 +1,11 @@
-#include "tensorUtil.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <assert.h>
 #include "tensorCuda.h"
+#include "tensorUtil.h"
+
+#define MAXDIM 8
 
 static void assertTensor(const Tensor *tensor)
 {

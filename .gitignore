@@ -1,8 +1,11 @@
 *~
 *.bak
-*.o
-*.out
 *.pyc
+*.out
+*.o
+*.wts
 GPATH
 GRTAGS
+GSYMS
 GTAGS
+data/*

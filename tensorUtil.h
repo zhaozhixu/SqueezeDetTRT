@@ -1,10 +1,5 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <assert.h>
-#include "tensorCuda.h"
-
-#define MAXDIM 8
+#ifndef _TENSOR_UTIL_H_
+#define _TENSOR_UTIL_H_
 
 typedef enum CloneKind {
      H2H, H2D, D2D, D2H
@@ -31,3 +26,5 @@ Tensor *createReducedTensor(const Tensor *src, int dim);
 void *reduceArgMax(const Tensor *src, Tensor *dst, Tensor *arg, int dim);
 Tensor *multiplyElement(const Tensor *src1, const Tensor *src2, Tensor *dst);
 Tensor *transformBboxSQD(const Tensor *delta, const Tensor *anchor, Tensor *res);
+
+#endif  /* _TENSOR_UTIL_H_ */
