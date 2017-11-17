@@ -1,0 +1,8 @@
+*~
+*.bak
+*.o
+*.out
+*.pyc
+GPATH
+GRTAGS
+GTAGS

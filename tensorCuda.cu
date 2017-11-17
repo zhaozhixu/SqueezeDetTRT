@@ -1,6 +1,8 @@
 #include "tensorCuda.h"
 
-__global__ void sliceTensorKernel(float *dst, float *src, int ddim, int sdim, int start, int block_size)
+static __device__ float E = 2.718281828;
+
+__global__ void sliceTensorKernel(float *src, float *dst, int sdim, int ddim, int start, int block_size)
 {
      int di = blockIdx.x * block_size + threadIdx.x;
      int si = (blockIdx.x / ddim * sdim + blockIdx.x % ddim + start) * block_size + threadIdx.x;
@@ -12,10 +14,50 @@ __global__ void reduceArgMaxKernel(float *src, float *dst, float *arg, int dim_s
      int di = blockIdx.x * block_size + threadIdx.x;
      int si = di * dim_size;
      float now = src[si], max = now;
+     int maxi = 0;
      for (int i = 1; i < dim_size; i++) {
           now = src[si+i];
-          max = now > max ? now : max;
+          if (now > max) {
+               max = now;
+               maxi = i;
+          }
      }
      dst[di] = max;
-     arg[di] = i - 1;
+     arg[di] = maxi;
+}
+
+__global__ void multiplyElementKernel(float *src1, float *src2, float *dst, int block_size)
+{
+     int di = blockIdx.x * block_size + threadIdx.x;
+     dst[di] = src1[di] * src2[di];
+}
+
+/* __global__ void transformBboxSQDKernel(float *delta, float *anchor, float *res, int block_size) */
+/* { */
+/*      int di = (blockIdx.x * block_size + threadIdx.x) * 4; */
+/*      float d[4] = {delta[di], delta[di+1], delta[di+2], delta[di+3]}; */
+/*      float a[4] = {anchor[di], anchor[di+1], anchor[di+2], anchor[di+3]}; */
+/*      float cx = a[0] + d[0] * a[2]; */
+/*      float cy = a[1] + d[1] * a[3]; */
+/*      float w = a[2] * (d[2] < 1 ? expf(d[2]) : d[2] * E); */
+/*      float h = a[3] * (d[3] < 1 ? expf(d[3]) : d[3] * E); */
+/*      res[di] = cx - w * 0.5; */
+/*      res[di+1] = cy - h * 0.5; */
+/*      res[di+2] = cx + w * 0.5; */
+/*      res[di+3] = cy + h * 0.5; */
+/* } */
+
+__global__ void transformBboxSQDKernel(float *delta, float *anchor, float *res, int block_size)
+{
+     int di = (blockIdx.x * block_size + threadIdx.x) * 4;
+     /* float d[4] = {delta[di], delta[di+1], delta[di+2], delta[di+3]}; */
+     /* float a[4] = {anchor[di], anchor[di+1], anchor[di+2], anchor[di+3]}; */
+     float cx = anchor[di+0] + delta[di+0] * anchor[di+2];
+     float cy = anchor[di+1] + delta[di+1] * anchor[di+3];
+     float w = anchor[di+2] * (delta[di+2] < 1 ? expf(delta[di+2]) : delta[di+2] * E);
+     float h = anchor[di+3] * (delta[di+3] < 1 ? expf(delta[di+3]) : delta[di+3] * E);
+     res[di] = cx - w * 0.5;
+     res[di+1] = cy - h * 0.5;
+     res[di+2] = cx + w * 0.5;
+     res[di+3] = cy + h * 0.5;
 }
