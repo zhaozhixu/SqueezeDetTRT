@@ -14,6 +14,7 @@ typedef struct {
 
 int isShapeEqual(const Tensor *t1, const Tensor *t2);
 void *cloneMem(const void *src, size_t size, CloneKind kind);
+void *repeatMem(void *data, size_t size, int times, CloneKind kind);
 int computeLength(int ndim, const int *dims);
 Tensor *createTensor(float *data, int ndim, const int *dims);
 void printTensor(const Tensor *tensor, const char *fmt);

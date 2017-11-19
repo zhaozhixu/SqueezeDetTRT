@@ -60,6 +60,45 @@ void *cloneMem(const void *src, size_t size, CloneKind kind)
 
 }
 
+void *repeatMem(void *data, size_t size, int times, CloneKind kind)
+{
+     assert(data && times > 0);
+     void *p, *dst;
+     int i;
+     switch (kind) {
+     case H2H:
+          dst = p = malloc(size * times);
+          assert(p);
+          for (i = 0; i < times; i++, p = (char *)p + size * times)
+               memmove(p, data, size);
+          return dst;
+     case H2D:
+          cudaMalloc(&p, size * times);
+          dst = p;
+          assert(p);
+          for (i = 0; i < times; i++, p = (char *)p + size * times)
+               cudaMemcpy(p, data, size, cudaMemcpyHostToDevice);
+          return dst;
+     case D2D:
+          cudaMalloc(&p, size * times);
+          dst = p;
+          assert(p);
+          for (i = 0; i < times; i++, p = (char *)p + size * times)
+               cudaMemcpy(p, data, size, cudaMemcpyDeviceToDevice);
+          return dst;
+     case D2H:
+          dst = p = malloc(size * times);
+          assert(p);
+          for (i = 0; i < times; i++, p = (char *)p + size * times)
+               cudaMemcpy(p, data, size, cudaMemcpyDeviceToHost);
+          return dst;
+     default:
+          fprintf(stderr, "unknown CloneKind %d\n", kind);
+          return NULL;
+     }
+}
+
+
 int computeLength(int ndim, const int *dims)
 {
      assert(dims);

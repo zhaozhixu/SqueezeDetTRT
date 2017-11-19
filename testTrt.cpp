@@ -22,7 +22,8 @@
 #include "NvInferPlugin.h"
 #include "common.h"
 #include "tensorUtil.h"
-
+#include "trtUtil.h"
+n
 static Logger gLogger;
 using namespace nvinfer1;
 using namespace nvcaffeparser1;
@@ -45,58 +46,10 @@ const char* OUTPUT_BLOB_NAME0 = "bbox_delta";
 const char* OUTPUT_BLOB_NAME1 = "pred_class_probs";
 const char* OUTPUT_BLOB_NAME2 = "pred_confidence_score";
 
-// Our weight files are in a very simple space delimited format.
-// [type] [size] <data x size in hex>
-std::map<std::string, Weights> loadWeights(const std::string file)
-{
-    std::map<std::string, Weights> weightMap;
-	std::ifstream input(file);
-	assert(input.is_open() && "Unable to load weight file.");
-    int32_t count;
-    input >> count;
-    assert(count > 0 && "Invalid weight map file.");
-    while(count--)
-    {
-        Weights wt{DataType::kFLOAT, nullptr, 0};
-        uint32_t type, size;
-        std::string name;
-        input >> name >> std::dec >> type >> size;
-        wt.type = static_cast<DataType>(type);
-        if (wt.type == DataType::kFLOAT)
-        {
-            uint32_t *val = reinterpret_cast<uint32_t*>(malloc(sizeof(val) * size)); // wrong sizeof oprand
-            for (uint32_t x = 0, y = size; x < y; ++x)
-            {
-                input >> std::hex >> val[x];
-
-            }
-            wt.values = val;
-        } else if (wt.type == DataType::kHALF)
-        {
-            uint16_t *val = reinterpret_cast<uint16_t*>(malloc(sizeof(val) * size)); // wrong sizeof oprand
-            for (uint32_t x = 0, y = size; x < y; ++x)
-            {
-                input >> std::hex >> val[x];
-            }
-            wt.values = val;
-        }
-        wt.count = size;
-        weightMap[name] = wt;
-    }
-    return weightMap;
-}
-
 std::string locateFile(const std::string& input)
 {
     std::vector<std::string> dirs{"samples/squeezeDetTrt/data/"};
     return locateFile(input, dirs);
-}
-
-cv::Mat readImage(const std::string& filename)
-{
-    cv::Mat img = cv::imread(filename);
-    cv::resize(img, img, Size(INPUT_W, INPUT_H));
-    return img;
 }
 
 IConvolutionLayer*
@@ -104,30 +57,30 @@ addFireLayer(INetworkDefinition* network, ITensor& input, int ns1x1, int ne1x1, 
              Weights wks1x1, Weights wke1x1, Weights wke3x3,
              Weights wbs1x1, Weights wbe1x1, Weights wbe3x3)
 {
-     auto sq1x1 = network->addConvolution(*input->getOutput(0), ns1x1, DimsHW{1, 1}, wks1x1, wbs1x1);
-     assert(sq1x1 != nullptr);
-     sq1x1->setStride(DimsHW{1, 1});
-     // sq1x1->setPadding(); TODO: add padding
-     auto relu1 = network->addActivation(*sq1x1->getOutput(0), ActivationType::kRELU);
-     assert(relu1 != nullptr);
+    auto sq1x1 = network->addConvolution(*input->getOutput(0), ns1x1, DimsHW{1, 1}, wks1x1, wbs1x1);
+    assert(sq1x1 != nullptr);
+    sq1x1->setStride(DimsHW{1, 1});
+    // sq1x1->setPadding(); TODO: add padding
+    auto relu1 = network->addActivation(*sq1x1->getOutput(0), ActivationType::kRELU);
+    assert(relu1 != nullptr);
 
-     auto ex1x1 = network->addConvolution(*relu1->getOutput(0) , ne1x1, DimsHW{1, 1}, wke1x1, wbe1x1);
-     assert(ex1x1 != nullptr);
-     ex1x1->setStride(DimsHW{1, 1});
-     auto relu2 = network->addActivation(*ex1x1->getOutput(0), ActivationType::kRELU);
-     assert(relu2 != nullptr);
+    auto ex1x1 = network->addConvolution(*relu1->getOutput(0) , ne1x1, DimsHW{1, 1}, wke1x1, wbe1x1);
+    assert(ex1x1 != nullptr);
+    ex1x1->setStride(DimsHW{1, 1});
+    auto relu2 = network->addActivation(*ex1x1->getOutput(0), ActivationType::kRELU);
+    assert(relu2 != nullptr);
 
-     auto ex3x3 = network->addConvolution(*relu1->getOutput(0), ne3x3, DimsHW{3, 3}, wke3x3, wbe3x3);
-     assert(ex3x3 != nullptr);
-     ex3x3->setStride(DimsHW{1, 1});
-     auto relu3 = network->addActivation(*ex3x3->getOutput(0), ActivationType::kRELU);
-     assert(relu3 != nullptr);
+    auto ex3x3 = network->addConvolution(*relu1->getOutput(0), ne3x3, DimsHW{3, 3}, wke3x3, wbe3x3);
+    assert(ex3x3 != nullptr);
+    ex3x3->setStride(DimsHW{1, 1});
+    auto relu3 = network->addActivation(*ex3x3->getOutput(0), ActivationType::kRELU);
+    assert(relu3 != nullptr);
 
-	 ITensor *concatTensors[] = {relu2->getOutput(0), relu3->getOutput(0)};
-	 auto concat = network->addConcatenation(concatTensors, 2);
-	 assert(concat != nullptr);
+    ITensor *concatTensors[] = {relu2->getOutput(0), relu3->getOutput(0)};
+    auto concat = network->addConcatenation(concatTensors, 2);
+    assert(concat != nullptr);
 
-     return concat;
+    return concat;
 }
 
 // Creat the Engine using only the API and not any parser.
@@ -262,86 +215,13 @@ createConvEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
 	return engine;
 }
 
-class Reshape: public IPlugin
-{
-public:
-    Reshape(Dims newDim): mNewDim(newDim) {
-    }
-
-    Reshape(const void* data, size_t length) {
-        const char* d = reinterpret_cast<const char*>(data), *a = d;
-        mNewDim = read<Dims>(d);
-        mCopySize = read<size_t>(d);
-        assert(d == a + length);
-    }
-
-    int getNbOutputs() const override {
-        return 1;
-    }
-
-	Dims getOutputDimensions(int index, const Dims* inputDims, int nbInputDims) override {
-        assert(nbInputDims == 1);
-        assert(index == 0);
-        assert(inputDims[index].nbDims == 4);
-        assert((inputDims[0].d[0])*(inputDims[0].d[1])*(inputDims[0].d[2])*(inputDims[0].d[3]) == (mNewDim[0].d[0])*(mNewDim[0].d[1])*(mNewDim[0].d[2])*(mNewDim[0].d[3]));
-        return mNewDim;
-    }
-
-	int initialize() override {
-        return 0;
-    }
-
-	void terminate() override {
-    }
-
-	size_t getWorkspaceSize(int) const override {
-        return 0;
-    }
-
-	// currently it is not possible for a plugin to execute "in place". Therefore we memcpy the data from the input to the output buffer
-	int enqueue(int batchSize, const void*const *inputs, void** outputs, void*, cudaStream_t stream) override {
-        CHECK(cudaMemcpyAsync(outputs[0], inputs[0], mCopySize * batchSize, cudaMemcpyDeviceToDevice, stream));
-        return 0;
-    }
-
-	size_t getSerializationSize() override {
-        return sizeof(mCopySize) + sizeof(mNewDim);
-    }
-
-	void serialize(void* buffer) override {
-        char* d = reinterpret_cast<char*>(buffer), *a = d;
-		write(d, mNewDim);
-		write(d, mCopySize);
-		assert(d == a + getSerializationSize());
-    }
-
-    void configure(const Dims*inputDims, int nbInputs, const Dims* outputDims, int nbOutputs, int)	override {
-        mCopySize = inputDims[0].d[0] * inputDims[0].d[1] * inputDims[0].d[2] * inputDims[0].d[3] * sizeof(float);
-    }
-
-private:
-	template<typename T> void write(char*& buffer, const T& val) {
-        *reinterpret_cast<T*>(buffer) = val;
-        buffer += sizeof(T);
-    }
-
-	template<typename T> T read(const char*& buffer) {
-        T val = *reinterpret_cast<const T*>(buffer);
-        buffer += sizeof(T);
-        return val;
-    }
-
-    Dims mNewDim;
-    size_t mCopySize;
-}
-
 ICudaEngine *
 createInterpretEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
 {
     INetworkDefinition* network = builder->createNetwork();
 
-	auto class_tensor = network->addInput(CONVOUT_BLOB_NAME0, dt, DimsNCHW{INPUT_N, 27, CONVOUT_H, CONVOUT_W});
-	assert(class_tensor != nullptr);
+    auto class_tensor = network->addInput(CONVOUT_BLOB_NAME0, dt, DimsNCHW{INPUT_N, 27, CONVOUT_H, CONVOUT_W});
+    assert(class_tensor != nullptr);
     auto confidence_tensor = network->addInput(CONVOUT_BLOB_NAME1, dt, DimsNCHW{INPUT_N, 9, CONVOUT_H, CONVOUT_W});
     assert(confidence_tensor != nullptr);
     auto bbox_delta_tensor = network->addInput(CONVOUT_BLOB_NAME2, dt, DimsNCHW{INPUT_N, 36, CONVOUT_H, CONVOUT_W});
@@ -366,38 +246,22 @@ createInterpretEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
     assert(pred_bbox_delta != nullptr);
 
     prob->getOutput(0)->setName(OUTPUT_BLOB_NAME);
-	network->markOutput(*prob->getOutput(0));
+    network->markOutput(*prob->getOutput(0));
 
-	// Build the engine
-	builder->setMaxBatchSize(maxBatchSize);
-	builder->setMaxWorkspaceSize(1 << 20);
+    // Build the engine
+    builder->setMaxBatchSize(maxBatchSize);
+    builder->setMaxWorkspaceSize(1 << 20);
 
-	auto engine = builder->buildCudaEngine(*network);
-	// we don't need the network any more
-	network->destroy();
+    auto engine = builder->buildCudaEngine(*network);
+    // we don't need the network any more
+    network->destroy();
 
-	// Once we have built the cuda engine, we can release all of our held memory.
-	for (auto &mem : weightMap)
+    // Once we have built the cuda engine, we can release all of our held memory.
+    for (auto &mem : weightMap)
     {
         free((void*)(mem.second.values));
     }
-	return engine;
-}
-
-void APIToModel(unsigned int maxBatchSize, // batch size - NB must be at least as large as the batch we want to run with)
-		     IHostMemory **modelStream)
-{
-	// create the builder
-	IBuilder* builder = createInferBuilder(gLogger);
-
-	// create the model to populate the network, then set the outputs and create an engine
-	ICudaEngine* engine = createEngine(maxBatchSize, builder, DataType::kFLOAT);
-
-	assert(engine != nullptr);
-	// serialize the engine, then close everything down
-	(*modelStream) = engine->serialize();
-	engine->destroy();
-	builder->destroy();
+    return engine;
 }
 
 void doInference(IExecutionContext& context, float* input, float *output, int batchSize)
@@ -456,7 +320,6 @@ int main(int argc, char** argv)
 	ICudaEngine* engine = runtime->deserializeCudaEngine(gieModelStream->data(), gieModelStream->size(), nullptr);
 
 	IExecutionContext *context = engine->createExecutionContext();
-
 
 	// host memory for outputs
 	float* output = new float[N * OUTPUT_SIZE];
