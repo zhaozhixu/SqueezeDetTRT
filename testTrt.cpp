@@ -29,7 +29,7 @@ using namespace nvinfer1;
 using namespace nvcaffeparser1;
 using namespace plugin;
 
-static const int INPUT_N = 20;
+static const int INPUT_N = 1;
 static const int INPUT_C = 3;
 static const int INPUT_H = 384;
 static const int INPUT_W = 1248;
@@ -37,21 +37,22 @@ static const int CONVOUT_C = 72;
 static const int CONVOUT_H = 24;
 static const int CONVOUT_W = 78;
 static const int CLASS_SLICE_C = 27;
-static const int CONFIDENCE_SLICE_C = 9;
-static const int BBOX_DELTA_SLICE_C = 36;
+static const int CONF_SLICE_C = 9;
+static const int BBOX_SLICE_C = 36;
 static const int ANCHORS_PER_GRID = 9;
+static const int ANCHOR_SIZE = 4;
 static const int OUTPUT_CLS_SIZE = 3;
 static const int OUTPUT_BBOX_SIZE = 4;
 static const int TOP_N_DECTION = 64;
 
-const char* INPUT_NAME0 = "data";
-const char* CONVOUT__NAME0 = "conv_out";
-const char* INTERPRET_INPUT_NAME0 = "class_slice";
-const char* INTERPRET_INPUT_NAME1 = "confidence_slice";
-const char* INTERPRET_INPUT_NAME2 = "bbox_slice";
-const char* INTERPRET_OUTPUT_NAME0 = "bbox_delta";
-const char* INTERPRET_OUTPUT_NAME1 = "pred_class_probs";
-const char* INTERPRET_OUTPUT_NAME2 = "pred_confidence_score";
+const char* INPUT_NAME = "data";
+const char* CONVOUT_NAME = "conv_out";
+const char* CLASS_INPUT_NAME = "class_slice";
+const char* CONF_INPUT_NAME = "confidence_slice";
+const char* BBOX_INPUT_NAME = "bbox_slice";
+const char* CLASS_OUTPUT_NAME = "pred_class_probs";
+const char* CONF_OUTPUT_NAME = "pred_confidence_score";
+const char* BBOX_OUTPUT_NAME = "bbox_delta";
 
 const float ANCHOR_SHAPE[] = {36, 37, 366, 174, 115, 59, /* w x h, 2 elements one group*/
                               162, 87, 38, 90, 258, 173,
@@ -231,33 +232,27 @@ createInterpretEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
 {
     INetworkDefinition* network = builder->createNetwork();
 
-    auto class_tensor = network->addInput(CONVOUT_BLOB_NAME0, dt, DimsNCHW{INPUT_N, CLASS_SLICE_C, CONVOUT_H, CONVOUT_W});
+    auto class_tensor = network->addInput(CLASS_INPUT_NAME, dt, DimsCHW{OUTPUT_CLS_SIZE, 1, INPUT_N * CONVOUT_H * CONVOUT_W * CLASS_SLICE_C / OUTPUT_CLS_SIZE});
     assert(class_tensor != nullptr);
-    auto confidence_tensor = network->addInput(CONVOUT_BLOB_NAME1, dt, DimsNCHW{INPUT_N, CONFIDENCE_SLICE_C, CONVOUT_H, CONVOUT_W});
+    auto confidence_tensor = network->addInput(CONF_INPUT_NAME, dt, DimsNCHW{INPUT_N, 1, 1, CONVOUT_W * CONVOUT_H * ANCHORS_PER_GRID});
     assert(confidence_tensor != nullptr);
-    auto bbox_delta_tensor = network->addInput(CONVOUT_BLOB_NAME2, dt, DimsNCHW{INPUT_N, BBOX_DELTA_SLICE_C, CONVOUT_H, CONVOUT_W});
+    auto bbox_delta_tensor = network->addInput(BBOX_INPUT_NAME, dt, DimsNCHW{INPUT_N, OUTPUT_BBOX_SIZE, 1,  CONVOUT_W * CONVOUT_H * ANCHORS_PER_GRID});
     assert(bbox_delta_tensor != nullptr);
 
-    Reshape *class_reshape1_plugin = new Reshape(DimsCHW{OUTPUT_CLS_SIZE, 1, 336960});
-
-    auto class_reshape1 = network->addReshape(*class_tensor, );
-    assert(class_reshape != nullptr);
-    auto class_softmax = network->addSoftMax(*class_reshape->getOutput(0));
+    auto class_softmax = network->addSoftMax(*class_tensor->getOutput(0));
     assert(class_softmax != nullptr);
-    auto class_reshape2 = network->addReshape(*class_softmax->getOutput(0), DimsNCHW{INPUT_N, OUTPUT_CLS_SIZE, 1, 16848});
-    assert(class_reshape2 != nullptr);
-    auto pred_class_probs = class_reshape2;
-
-    auto conf_reshape = network->addReshape(*confidence_tensor, DimsNCHW{INPUT_N, 1, 1, 16848});
-    assert(conf_reshape != nullptr);
-    auto pred_conf = network->addActivation(*conf_reshape->getOutput(0), ActivationType::kSIGMOID);
+    auto pred_conf = network->addActivation(*confidence_tensor->getOutput(0), ActivationType::kSIGMOID);
     assert(pred_conf != nullptr);
 
-    auto pred_bbox_delta = network->addReshape(*bbox_delta_tensor, DimsNCHW{INPUT_N, OUTPUT_BBOX_SIZE, 1, 16848});
-    assert(pred_bbox_delta != nullptr);
+    // auto pred_bbox_delta = network->addReshape(*bbox_delta_tensor, DimsNCHW{INPUT_N, OUTPUT_BBOX_SIZE, 1, 16848});
+    // assert(pred_bbox_delta != nullptr);
 
-    prob->getOutput(0)->setName(OUTPUT_BLOB_NAME);
-    network->markOutput(*prob->getOutput(0));
+    class_softmax->getOutput(0)->setName(CLASS_OUTPUT_NAME);
+    pred_conf->getOutput(0)->setName(CONF_OUTPUT_NAME);
+    bbox_delta_tensor->setName(BBOX_OUTPUT_NAME);
+    network->markOutput(*class_softmax->getOutput(0));
+    network->markOutput(*pred_conf->getOutput(0));
+    network->markOutput(*bbox_delta_tensor);
 
     // Build the engine
     builder->setMaxBatchSize(maxBatchSize);
@@ -275,44 +270,92 @@ createInterpretEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
     return engine;
 }
 
-void doInference(IExecutionContext& convContext, IExecutionContext& interpretContext, float* input, float *output, int batchSize)
+void doInference(IExecutionContext& convContext, IExecutionContext& interpretContext, float* input, float* anchors, float *output, int batchSize)
 {
 	const ICudaEngine& convEngine = convContext.getEngine();
     const ICudaEngine& interpretEngine = interpretContext.getEngine();
 
 	assert(convEngine.getNbBindings() == 2);
-    assert(interpretEngine.getNbBindings() == 4);
+    assert(interpretEngine.getNbBindings() == 6);
 	void* convBuffers[2];
-    void* interpretBuffers[4];
+    void* interpretBuffers[6];
 
 	// In order to bind the buffers, we need to know the names of the input and output tensors.
 	// note that indices are guaranteed to be less than IEngine::getNbBindings()
-	int inputIndex0 = convEngine.getBindingIndex(INPUT_NAME0),
-		convoutIndex0 = convEngine.getBindingIndex(CONVOUT_NAME0),
-        interpretInputIndex0 = interpretEngine.getBindingIndex(INTERPRET_INPUT_NAME0),
-        interpretInputIndex1 = interpretEngine.getBindingIndex(INTERPRET_INPUT_NAME1),
-        interpretOutputIndex0 = interpretEngine.getBindingIndex(INTERPRET_OUTPUT_NAME1),
-        interpretOutputIndex1 = interpretEngine.getBindingIndex(INTERPRET_OUTPUT_NAME2);
+	int inputIndex = convEngine.getBindingIndex(INPUT_NAME),
+		convoutIndex = convEngine.getBindingIndex(CONVOUT_NAME),
+        classInputIndex = interpretEngine.getBindingIndex(CLASS_INPUT_NAME),
+        confInputIndex = interpretEngine.getBindingIndex(CONF_INPUT_NAME),
+        classOutputIndex = interpretEngine.getBindingIndex(CLASS_OUTPUT_NAME),
+        confOutputIndex = interpretEngine.getBindingIndex(CONF_OUTPUT_NAME),
+        bboxInputIndex = interpretEngine.getBindingIndex(BBOX_INPUT_NAME),
+        bboxOutputIndex = interpretEngine.getBindingIndex(BBOX_OUTPUT_NAME);
 
 	// create GPU buffers and a stream
-	CHECK(cudaMalloc(&convBuffers[inputIndex0], batchSize * INPUT_C * INPUT_H * INPUT_W * sizeof(float)));
-	CHECK(cudaMalloc(&convBuffers[convoutIndex0], batchSize * CONVOUT_H * CONVOUT_W * CONVOUT_C * sizeof(float)));
-    CHECK(cudaMalloc(&interpretBuffers[interpretInputIndex0], batchSize * CONVOUT_H * CONVOUT_W * CLASS_SLICE_C * sizeof(float)));
-    CHECK(cudaMalloc(&interpretBuffers[interpretInputIndex1], batchSize * CONVOUT_H * CONVOUT_W * CONFIDENCE_SLICE_C * sizeof(float)));
-    CHECK(cudaMalloc(&interpretBuffers[interpretOutputIndex0], batchSize * CONVOUT_H * CONVOUT_W * CONFIDENCE_SLICE_C * sizeof(float)));
+    int anchorsNum = CONVOUT_W * CONVOUT_H * ANCHORS_PER_GRID;
+    size_t inputSize = batchSize * INPUT_C * INPUT_H * INPUT_W * sizeof(float);
+    size_t convoutSize = batchSize * CONVOUT_H * CONVOUT_W * CONVOUT_C * sizeof(float);
+    size_t classInputSize = batchSize * CONVOUT_H * CONVOUT_W * CLASS_SLICE_C * sizeof(float);
+    size_t confInputSize = batchSize * CONVOUT_H * CONVOUT_W * CONF_SLICE_C * sizeof(float);
+    size_t bboxInputSize = batchSize * CONVOUT_H * CONVOUT_W * BBOX_SLICE_C * sizeof(float);
+    size_t classOutputSize = batchSize * OUTPUT_CLS_SIZE * anchorsNum * sizeof(float);
+    size_t confOutputSize = batchSize * anchorsNum * sizeof(float);
+    size_t bboxOutputSize = batchSize * anchorsNum * OUTPUT_BBOX_SIZE * sizeof(float);
+	CHECK(cudaMalloc(&convBuffers[inputIndex], inputSize));
+	CHECK(cudaMalloc(&convBuffers[convoutIndex], convoutSize));
+    CHECK(cudaMalloc(&interpretBuffers[classInputIndex], classInputSize));
+    CHECK(cudaMalloc(&interpretBuffers[confInputIndex], confInputSize));
+    CHECK(cudaMalloc(&interpretBuffers[bboxInputIndex], bboxInputSize));
+    CHECK(cudaMalloc(&interpretBuffers[classOutputIndex], classOutputSize));
+    CHECK(cudaMalloc(&interpretBuffers[confOutputIndex], confOutputSize));
+    CHECK(cudaMalloc(&interpretBuffers[bboxOutputIndex], bboxOutputSize));
+
+    int convout_dims[] = {INPUT_N, CONVOUT_H, CONVOUT_W, CONVOUT_C};
+    int classInputDims[] = {INPUT_N, CONVOUT_H, CONVOUT_W, CLASS_SLICE_C};
+    int confInputDims[] = {INPUT_N, CONVOUT_H, CONVOUT_W, CONF_SLICE_C};
+    int bboxInputDims[] = {INPUT_N, CONVOUT_H, CONVOUT_W, BBOX_SLICE_C};
+    int classOutputDims[] = {INPUT_N, anchorsNum, OUTPUT_CLS_SIZE};
+    int confOutputDims[] = {INPUT_N, anchorsNum, 1};
+    int bboxOutputDims[] = {INPUT_N, anchorsNum, OUTPUT_BBOX_SIZE};
+    Tensor *convoutTensor = createTensor(interpretBuffers[convoutIndex], 4, convout_dims);
+    Tensor *classInputTensor = createTensor(interpretBuffers[classInputIndex], 4, classInputDims);
+    Tensor *confInputTensor = createTensor(interpretBuffers[confInputIndex], 4, confInputDims);
+    Tensor *bboxInputTensor = createTensor(interpretBuffers[bboxInputIndex], 4, bboxInputDims);
+    Tensor *classOutputTensor = createTensor(interpretBuffers[classOutputIndex], 3, classOutputDims);
+    Tensor *confOutputTensor = createTensor(interpretBuffers[confOutputIndex], 3, confOutputDims);
+    Tensor *bboxOutputTensor = createTensor(interpretBuffers[bboxOutputIndex], 3, bboxOutputDims);
+
+    float *reduceMaxRes, *reduceArgRes, *mulRes, *bboxRes, *anchorsCuda;
+    CHECK(cudaMalloc(&reduceMaxRes, batchSize * anchorNum * sizeof(float)));
+    CHECK(cudaMalloc(&reduceArgRes, batchSize * anchorNum * sizeof(float)));
+    CHECK(cudaMalloc(&mulRes, batchSize * anchorNum * sizeof(float)));
+    CHECK(cudaMalloc(&bboxRes, batchSize * anchorNum * OUTPUT_BBOX_SIZE * sizeof(float)));
+    anchorsCuda = cloneMem(anchors, batchSize * anchorNum * ANCHOR_SIZE * sizeof(float), H2D);
+    int reduceMaxResDims[] = {INPUT_N, anchorNum, 1};
+    int reduceArgResDims[] = {INPUT_N, anchorNum, 1};
+    int mulResDims[] = {INPUT_N, anchorNum, 1};
+    int bboxResDims[] = {INPUT_N, anchorNum, OUTPUT_BBOX_SIZE};
+    int anchorsCudaDims[] = {INPUT_N, anchorNum, ANCHOR_SIZE};
+    Tensor *reduceMaxResTensor = createTensor(reduceMaxRes, 3, reduceMaxResDims);
+    Tensor *reduceArgResTensor = createTensor(reduceArgRes, 3, reduceArgResDims);
+    Tensor *mulResTensor = createTensor(mulRes, 3, mulResDims);
+    Tensor *bboxResTensor = createTensor(bboxRes, 3, bboxResDims);
+    Tensor *anchorsCudaTensor = createTensor(anchorsCuda, 3, anchorsCudaDims);
 
 	cudaStream_t stream;
 	CHECK(cudaStreamCreate(&stream));
 
 	// DMA the input to the GPU,  execute the batch asynchronously, and DMA it back:
-	CHECK(cudaMemcpyAsync(buffers[inputIndex0], input, batchSize * INPUT_C * INPUT_H * INPUT_W * sizeof(float), cudaMemcpyHostToDevice, stream));
-	context.enqueue(batchSize, buffers, stream, nullptr);
+	CHECK(cudaMemcpyAsync(convBuffers[inputIndex], input, inputSize, cudaMemcpyHostToDevice, stream));
 
-    int dims[] = {2, 3, 3};
-    Tensor notsliced = createTensor(buffers[outputIndex0], 3, dims);
-    Tensor *sliced;
-    sliceTensor(notsliced, sliced, 2, 1, 2);
-
+	convContext.enqueue(batchSize, convBuffers, stream, nullptr);
+    sliceTensorCuda(convoutTensor, classInputTensor, 3, 0, CLASS_SLICE_C);
+    sliceTensorCuda(convoutTensor, confInputTensor, 3, CLASS_SLICE_C, CONF_SLICE_C);
+    sliceTensorCuda(convoutTensor, bboxInputTensor, 3, CLASS_SLICE_C + CONF_SLICE_C, BBOX_SLICE_C);
+    interpretContext.enqueue(batchSize, interpretBuffers, stream, nullptr);
+    reduceArgMax(classOutputTensor, reduceMaxResTensor, reduceArgResTensor, 2);
+    multiplyElement(reduceMaxResTensor, confOutputTensor, mulResTensor);
+    transformBboxSQD(bboxOutputTensor, anchorsCudaTensor, bboxResTensor);
 
 	CHECK(cudaMemcpyAsync(output, buffers[outputIndex0], batchSize * OUTPUT_SIZE * sizeof(float), cudaMemcpyDeviceToHost, stream));
 	cudaStreamSynchronize(stream);
@@ -409,9 +452,9 @@ int main(int argc, char** argv)
     std::vector<std::string> imageList = getImageList(argv[1]);
     float *data = prepareData(imgList);
     float *anchors = prepareAnchors(ANCHOR_SHAPE, INPUT_W, INPUT_H, CONVOUT_H, CONVOUT_W, ANCHORS_PER_GRID);
-    float *out_probs = new float[INPUT_N*TOP_N_DECTION];
-    float *out_class = new float[INPUT_N*TOP_N_DECTION];
-    float *out_bbox = new float[INPUT_N*TOP_N_DECTION*4];
+    float *outProbs = new float[INPUT_N * TOP_N_DECTION];
+    float *outClass = new float[INPUT_N * TOP_N_DECTION];
+    float *outBbox = new float[INPUT_N * TOP_N_DECTION * OUTPUT_BBOX_SIZE];
 
     // create engines
 	IHostMemory *convModelStream{ nullptr };
@@ -426,7 +469,7 @@ int main(int argc, char** argv)
     IExecutionContext *interpretContext = interpretEngine->createExecutionContext();
 
 	// run inference
-	doInference(*context, data, output, N);
+    doInference(convContext, interpretContext, data, anchors,float* output, INPUT_N);
 
     for (int i = 0; i < OUTPUT_SIZE; i++) {
         printf("%.2f ", output[i]);

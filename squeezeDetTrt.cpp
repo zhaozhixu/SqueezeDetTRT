@@ -34,7 +34,7 @@ static const int INPUT_H = 384;
 static const int INPUT_W = 1248;
 static const int IM_INFO_SIZE = 3; // ?
 static const int OUTPUT_CLS_SIZE = 3;
-static const int OUTPUT_BBOX_SIZE = OUTPUT_CLS_SIZE * 4; // ?
+static const int OUTPUT_BBOX_SIZE = 4; // ?
 static const int ANCHOR_PER_GRID = 9;
 static const int NUM_OUTPUT = ANCHOR_PER_GRID * (OUTPUT_CLS_SIZE + 1 + 4);
 
