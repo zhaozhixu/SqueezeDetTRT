@@ -142,14 +142,14 @@ void testTransformBboxSQD()
      printTensor(res_host, "%.6f");
 }
 
-void testRepeatMem()
+void testAnchor()
 {
      /* int H = 24, W = 78, B = 9; */
      int H = 4, W = 2, B = 9;
      int width = 1248, height = 384;
-     float anchor_shape[9][2] = {{36, 37}, {366, 174}, {115, 59},
-                                 {162, 87}, {38, 90}, {258, 173},
-                                 {224, 108}, {78, 170}, {72, 43}};
+     float anchor_shape[] = {36, 37, 366, 174, 115, 59, /* w x h, 2 elements one group*/
+                             162, 87, 38, 90, 258, 173,
+                             224, 108, 78, 170, 72, 43};
      float center_x[W], center_y[H];
      float anchors[H*W*B*4];
      int i, j, k;
@@ -157,9 +157,35 @@ void testRepeatMem()
           center_x[i-1] = i * width / (W + 1.0);
      for (i = 1; i <= H; i++)
           center_y[i-1] = i * height / (H + 1.0);
-     /* int anchors_dims[] = {24, 78, 9, 4}; */
      int anchors_dims[] = {W, H, B, 4};
      Tensor *anchor_tensor = createTensor(anchors, 4, anchors_dims);
+     /* int w_vol = anchor_tensor->dims[1] * anchor_tensor->dims[2] * anchor_tensor->dims[3]; */
+     /* int h_vol = anchor_tensor->dims[2] * anchor_tensor->dims[3]; */
+     /* int b_vol = anchor_tensor->dims[3]; */
+     int w_vol = H*B*4;
+     int h_vol = B*4;
+     int b_vol = 4;
+     /* for (i = 0; i < anchor_tensor->dims[0]; i++) { */
+     /*      for (j = 0; j < anchor_tensor->dims[1]; j++) { */
+     /*           for (k = 0; k < anchor_tensor->dims[2]; k++) { */
+     /*                anchor_tensor->data[i*w_vol+j*h_vol+k*b_vol] = center_x[i]; */
+     /*                anchor_tensor->data[i*w_vol+j*h_vol+k*b_vol+1] = center_y[j]; */
+     /*                anchor_tensor->data[i*w_vol+j*h_vol+k*b_vol+2] = anchor_shape[k*2]; */
+     /*                anchor_tensor->data[i*w_vol+j*h_vol+k*b_vol+3] = anchor_shape[k*2+1]; */
+     /*           } */
+     /*      } */
+     /* } */
+     for (i = 0; i < W; i++) {
+          for (j = 0; j < H; j++) {
+               for (k = 0; k < B; k++) {
+                    anchors[i*w_vol+j*h_vol+k*b_vol] = center_x[i];
+                    anchors[i*w_vol+j*h_vol+k*b_vol+1] = center_y[j];
+                    anchors[i*w_vol+j*h_vol+k*b_vol+2] = anchor_shape[k*2];
+                    anchors[i*w_vol+j*h_vol+k*b_vol+3] = anchor_shape[k*2+1];
+               }
+          }
+     }
+     printf("anchor_tensor:\n");
      printTensor(anchor_tensor, "%.2f");
 }
 
@@ -171,5 +197,5 @@ int main(int argc, char *argv[])
      testReduceArgMax();
      testMultiplyElement();
      testTransformBboxSQD();
-     testRepeatMem();
+     testAnchor();
 }

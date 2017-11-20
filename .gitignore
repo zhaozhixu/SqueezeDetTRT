@@ -4,6 +4,7 @@
 *.out
 *.o
 *.wts
+testtrt
 GPATH
 GRTAGS
 GSYMS

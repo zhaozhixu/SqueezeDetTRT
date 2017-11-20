@@ -535,18 +535,17 @@ int main(int argc, char** argv)
 	IHostMemory *gieModelStream{ nullptr };
 	// batch size
 	const int N = 20;
+    APIToModel(1, &gieModelStream);
+
 	// read a random sample image
 	srand(unsigned(time(nullptr)));
 	// available images
 	std::vector<cv::Mat> images;
-    APIToModel(1, &gieModelStream);
 
 	std::random_shuffle(imageList.begin(), imageList.end(), [](int i) {return rand() % i; });
-	assert(ppms.size() <= imageList.size());
+	assert(images.size() <= imageList.size());
 	for (int i = 0; i < N; ++i)
-	{
 		images.push_back(readImage(imageList[i]));
-	}
 
 	float* data = new float[N*INPUT_C*INPUT_H*INPUT_W];
 	// pixel mean used by the SqueezeDet's author

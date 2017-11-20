@@ -23,7 +23,7 @@
 #include "common.h"
 #include "tensorUtil.h"
 #include "trtUtil.h"
-n
+
 static Logger gLogger;
 using namespace nvinfer1;
 using namespace nvcaffeparser1;
@@ -33,18 +33,29 @@ static const int INPUT_N = 20;
 static const int INPUT_C = 3;
 static const int INPUT_H = 384;
 static const int INPUT_W = 1248;
+static const int CONVOUT_C = 72;
 static const int CONVOUT_H = 24;
 static const int CONVOUT_W = 78;
+static const int CLASS_SLICE_C = 27;
+static const int CONFIDENCE_SLICE_C = 9;
+static const int BBOX_DELTA_SLICE_C = 36;
+static const int ANCHORS_PER_GRID = 9;
 static const int OUTPUT_CLS_SIZE = 3;
 static const int OUTPUT_BBOX_SIZE = 4;
+static const int TOP_N_DECTION = 64;
 
-const char* INPUT_BLOB_NAME0 = "data";
-const char* CONVOUT_BLOB_NAME0 = "class_slice";
-const char* CONVOUT_BLOB_NAME1 = "confidence_slice";
-const char* CONVOUT_BLOB_NAME2 = "bbox_slice";
-const char* OUTPUT_BLOB_NAME0 = "bbox_delta";
-const char* OUTPUT_BLOB_NAME1 = "pred_class_probs";
-const char* OUTPUT_BLOB_NAME2 = "pred_confidence_score";
+const char* INPUT_NAME0 = "data";
+const char* CONVOUT__NAME0 = "conv_out";
+const char* INTERPRET_INPUT_NAME0 = "class_slice";
+const char* INTERPRET_INPUT_NAME1 = "confidence_slice";
+const char* INTERPRET_INPUT_NAME2 = "bbox_slice";
+const char* INTERPRET_OUTPUT_NAME0 = "bbox_delta";
+const char* INTERPRET_OUTPUT_NAME1 = "pred_class_probs";
+const char* INTERPRET_OUTPUT_NAME2 = "pred_confidence_score";
+
+const float ANCHOR_SHAPE[] = {36, 37, 366, 174, 115, 59, /* w x h, 2 elements one group*/
+                              162, 87, 38, 90, 258, 173,
+                              224, 108, 78, 170, 72, 43};
 
 std::string locateFile(const std::string& input)
 {
@@ -220,11 +231,11 @@ createInterpretEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
 {
     INetworkDefinition* network = builder->createNetwork();
 
-    auto class_tensor = network->addInput(CONVOUT_BLOB_NAME0, dt, DimsNCHW{INPUT_N, 27, CONVOUT_H, CONVOUT_W});
+    auto class_tensor = network->addInput(CONVOUT_BLOB_NAME0, dt, DimsNCHW{INPUT_N, CLASS_SLICE_C, CONVOUT_H, CONVOUT_W});
     assert(class_tensor != nullptr);
-    auto confidence_tensor = network->addInput(CONVOUT_BLOB_NAME1, dt, DimsNCHW{INPUT_N, 9, CONVOUT_H, CONVOUT_W});
+    auto confidence_tensor = network->addInput(CONVOUT_BLOB_NAME1, dt, DimsNCHW{INPUT_N, CONFIDENCE_SLICE_C, CONVOUT_H, CONVOUT_W});
     assert(confidence_tensor != nullptr);
-    auto bbox_delta_tensor = network->addInput(CONVOUT_BLOB_NAME2, dt, DimsNCHW{INPUT_N, 36, CONVOUT_H, CONVOUT_W});
+    auto bbox_delta_tensor = network->addInput(CONVOUT_BLOB_NAME2, dt, DimsNCHW{INPUT_N, BBOX_DELTA_SLICE_C, CONVOUT_H, CONVOUT_W});
     assert(bbox_delta_tensor != nullptr);
 
     Reshape *class_reshape1_plugin = new Reshape(DimsCHW{OUTPUT_CLS_SIZE, 1, 336960});
@@ -264,22 +275,31 @@ createInterpretEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
     return engine;
 }
 
-void doInference(IExecutionContext& context, float* input, float *output, int batchSize)
+void doInference(IExecutionContext& convContext, IExecutionContext& interpretContext, float* input, float *output, int batchSize)
 {
-	const ICudaEngine& engine = context.getEngine();
-	// input and output buffer pointers that we pass to the engine - the engine requires exactly IEngine::getNbBindings(),
-	// of these, but in this case we know that there is exactly 1 inputs and 1 outputs.
-	assert(engine.getNbBindings() == 2);
-	void* buffers[2];
+	const ICudaEngine& convEngine = convContext.getEngine();
+    const ICudaEngine& interpretEngine = interpretContext.getEngine();
+
+	assert(convEngine.getNbBindings() == 2);
+    assert(interpretEngine.getNbBindings() == 4);
+	void* convBuffers[2];
+    void* interpretBuffers[4];
 
 	// In order to bind the buffers, we need to know the names of the input and output tensors.
 	// note that indices are guaranteed to be less than IEngine::getNbBindings()
-	int inputIndex0 = engine.getBindingIndex("input"),
-		outputIndex0 = engine.getBindingIndex("output");
+	int inputIndex0 = convEngine.getBindingIndex(INPUT_NAME0),
+		convoutIndex0 = convEngine.getBindingIndex(CONVOUT_NAME0),
+        interpretInputIndex0 = interpretEngine.getBindingIndex(INTERPRET_INPUT_NAME0),
+        interpretInputIndex1 = interpretEngine.getBindingIndex(INTERPRET_INPUT_NAME1),
+        interpretOutputIndex0 = interpretEngine.getBindingIndex(INTERPRET_OUTPUT_NAME1),
+        interpretOutputIndex1 = interpretEngine.getBindingIndex(INTERPRET_OUTPUT_NAME2);
 
 	// create GPU buffers and a stream
-	CHECK(cudaMalloc(&buffers[inputIndex0], batchSize * INPUT_C * INPUT_H * INPUT_W * sizeof(float)));
-	CHECK(cudaMalloc(&buffers[outputIndex0], batchSize * OUTPUT_SIZE * sizeof(float)));
+	CHECK(cudaMalloc(&convBuffers[inputIndex0], batchSize * INPUT_C * INPUT_H * INPUT_W * sizeof(float)));
+	CHECK(cudaMalloc(&convBuffers[convoutIndex0], batchSize * CONVOUT_H * CONVOUT_W * CONVOUT_C * sizeof(float)));
+    CHECK(cudaMalloc(&interpretBuffers[interpretInputIndex0], batchSize * CONVOUT_H * CONVOUT_W * CLASS_SLICE_C * sizeof(float)));
+    CHECK(cudaMalloc(&interpretBuffers[interpretInputIndex1], batchSize * CONVOUT_H * CONVOUT_W * CONFIDENCE_SLICE_C * sizeof(float)));
+    CHECK(cudaMalloc(&interpretBuffers[interpretOutputIndex0], batchSize * CONVOUT_H * CONVOUT_W * CONFIDENCE_SLICE_C * sizeof(float)));
 
 	cudaStream_t stream;
 	CHECK(cudaStreamCreate(&stream));
@@ -303,26 +323,107 @@ void doInference(IExecutionContext& context, float* input, float *output, int ba
 	CHECK(cudaFree(buffers[outputIndex0]));
 }
 
+// maxBatch - NB must be at least as large as the batch we want to run with)
+void APIToModel(unsigned int maxBatch, IHostMemory **convModelStream, IHostMemory **interpretModelStream)
+{
+	// create the builder
+	IBuilder* builder = createInferBuilder(gLogger);
+
+	// create the model to populate the network, then set the outputs and create an engine
+	ICudaEngine* convEngine = createConvEngine(maxBatchSize, builder, DataType::kFLOAT);
+    ICudaEngine* interpretEngine = createInterpretEngine(maxBatchSize, builder, DataType::kFLOAT);
+
+	assert(convEngine != nullptr);
+    assert(interpretEngine != nullptr);
+
+	// serialize the engine, then close everything down
+	(*convModelStream) = convEngine->serialize();
+    (*interpretModelStream) = interpretEngine->serialize();
+	convEngine->destroy();
+    interpretEngine->destroy();
+	builder->destroy();
+}
+
+float *prepareData(std::vector<std::string> &imageList)
+{
+	std::vector<cv::Mat> images; // available images
+	float* data = new float[N*INPUT_C*INPUT_H*INPUT_W];
+
+	// srand(unsigned(time(nullptr))); // read a random sample image
+	// std::random_shuffle(imageList.begin(), imageList.end(), [](int i) {return rand() % i; });
+	assert(images.size() <= imageList.size());
+	for (int i = 0; i < N; ++i)
+		images.push_back(readImage(imageList[i]));
+
+	// pixel mean used by the SqueezeDet's author
+	float pixelMean[3]{ 103.939f, 116.779f, 123.68f }; // also in BGR order
+	for (int i = 0, volImg = INPUT_C*INPUT_H*INPUT_W; i < N; ++i)
+	{
+		for (int c = 0; c < INPUT_C; ++c)
+		{
+			// the color image to input should be in BGR order
+			for (unsigned j = 0, volChl = INPUT_H*INPUT_W; j < volChl; ++j)
+				data[i*volImg + c*volChl + j] = float(images[i].data[j*INPUT_C]) - pixelMean[c];
+		}
+	}
+
+    return data;
+}
+
+float *prepareAnchors(float *anchor_shape, int width, int height, int H, int W, int B)
+{
+    assert(anchor_shape);
+    float center_x[W], center_y[H];
+    float *anchors = new float[H*W*B*4];
+    int anchors_dims[] = {W, H, B, 4};
+    int i, j, k;
+
+    for (i = 1; i <= W; i++)
+        center_x[i-1] = i * width / (W + 1.0);
+    for (i = 1; i <= H; i++)
+        center_y[i-1] = i * height / (H + 1.0);
+
+    int w_vol = H * B * 4;
+    int h_vol = B * 4;
+    int b_vol = 4;
+    for (i = 0; i < W; i++) {
+        for (j = 0; j < H; j++) {
+            for (k = 0; k < B; k++) {
+                anchors[i*w_vol+j*h_vol+k*b_vol] = center_x[i];
+                anchors[i*w_vol+j*h_vol+k*b_vol+1] = center_y[j];
+                anchors[i*w_vol+j*h_vol+k*b_vol+2] = anchor_shape[k*2];
+                anchors[i*w_vol+j*h_vol+k*b_vol+3] = anchor_shape[k*2+1];
+            }
+        }
+    }
+    return anchors;
+}
+
 int main(int argc, char** argv)
 {
-	IHostMemory *gieModelStream{ nullptr };
-	// batch size
-	const int N = 1;
+    if (argc < 2) {
+        cout << "usage: sqzdtrt IMAGE_DIR\n";
+        exit(EXIT_SUCCESS);
+    }
 
-    APIToModel(1, &gieModelStream);
-	// float* data = new float[N*INPUT_C*INPUT_H*INPUT_W];
-    float data[] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-                    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-                    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
+    std::vector<std::string> imageList = getImageList(argv[1]);
+    float *data = prepareData(imgList);
+    float *anchors = prepareAnchors(ANCHOR_SHAPE, INPUT_W, INPUT_H, CONVOUT_H, CONVOUT_W, ANCHORS_PER_GRID);
+    float *out_probs = new float[INPUT_N*TOP_N_DECTION];
+    float *out_class = new float[INPUT_N*TOP_N_DECTION];
+    float *out_bbox = new float[INPUT_N*TOP_N_DECTION*4];
 
-	// deserialize the engine
+    // create engines
+	IHostMemory *convModelStream{ nullptr };
+    IHostMemory *interpretModelStream{ nullptr };
+    APIToModel(INPUT_N, &convModelStream, &interpretModelStream);
+
+	// deserialize engines
 	IRuntime* runtime = createInferRuntime(gLogger);
-	ICudaEngine* engine = runtime->deserializeCudaEngine(gieModelStream->data(), gieModelStream->size(), nullptr);
-
-	IExecutionContext *context = engine->createExecutionContext();
-
-	// host memory for outputs
-	float* output = new float[N * OUTPUT_SIZE];
+	ICudaEngine* convEngine = runtime->deserializeCudaEngine(convModelStream->data(), convModelStream->size(), nullptr);
+    ICudaEngine* interpretEngine = runtime->deserializeCudaEngine(interpretModelStream->data(), interpretModelStream->size(), nullptr);
+	IExecutionContext *convContext = convEngine->createExecutionContext();
+    IExecutionContext *interpretContext = interpretEngine->createExecutionContext();
 
 	// run inference
 	doInference(*context, data, output, N);
