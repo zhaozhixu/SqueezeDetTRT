@@ -33,7 +33,7 @@ std::vector<std::string> getImageList(const char *pathname)
           if (!strcmp(dirp->d_name, ".") || !strcmp(dirp->d_name, ".."))
                continue;
           // TODO: filter jpeg
-          imgList.push_back(std::string(dirp->d_name));
+          imgList.push_back(std::string(pathname) + std::string("/") + std::string(dirp->d_name));
      }
      return imgList;
 }

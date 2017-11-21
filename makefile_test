@@ -9,13 +9,15 @@ CUDNN_LIBDIR = lib64
 INCPATHS    =-I"$(CUDA_INSTALL_DIR)/include" -I"/usr/local/include" -I"../include" -I"../common" -I"$(CUDNN_INSTALL_DIR)/include" -I"../../include" $(TGT_INCLUDES)
 LIBPATHS    =-L"$(CUDA_INSTALL_DIR)/targets/$(TRIPLE)/$(CUDA_LIBDIR)" -L"/usr/local/lib" -L"../lib" -L"$(CUDA_INSTALL_DIR)/$(CUDA_LIBDIR)" -L"$(CUDNN_INSTALL_DIR)/$(CUDNN_LIBDIR)" -L"../../lib" $(TGT_LIBS)
 # COMMON_LIBS = -lcudnn -lcublas -lcudart_static -lnvToolsExt -lcudart
-COMMON_LIBS = -lcudnn -lcudart -lcudart_static
+COMMON_LIBS = -lcudnn -lcudart -lcudart_static `pkg-config --cflags --libs opencv` -std=c++11
 
 
-$(TARGET): test.o tensorUtil.o tensorCuda.o
-	$(CC) -Wall -g test.o tensorUtil.o tensorCuda.o -o testtrt $(INCPATHS) $(LIBPATHS) $(COMMON_LIBS)
+$(TARGET): test.o tensorUtil.o tensorCuda.o trtUtil.o
+	$(CC) -Wall -g test.o trtUtil.o tensorUtil.o tensorCuda.o -o testtrt $(INCPATHS) $(LIBPATHS) $(COMMON_LIBS)
 test.o: test.cu tensorUtil.h tensorCuda.h
 	$(CUCC) -g -c test.cu $(INCPATHS) $(LIBPATHS) $(COMMON_LIBS)
+trtUtil.o: trtUtil.cpp trtUtil.h
+	$(CUCC) -c trtUtil.cpp $(INCPATHS) $(LIBPATHS) $(COMMON_LIBS)
 tensorUtil.o: tensorUtil.cu tensorUtil.h tensorCuda.h
 	$(CUCC) -g -c tensorUtil.cu $(INCPATHS) $(LIBPATHS) $(COMMON_LIBS)
 tensorCuda.o: tensorCuda.cu tensorCuda.h

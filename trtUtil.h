@@ -1,7 +1,9 @@
 #ifndef _TRT_UTIL_H_
 #define _TRT_UTIL_H_
 
+#include <opencv2/opencv.hpp>
 #include "NvInfer.h"
+
 using namespace nvinfer1;
 
 std::vector<std::string> getImageList(const char *pathname);

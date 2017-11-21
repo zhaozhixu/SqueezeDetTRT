@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <thrust/sort.h>
 #include "tensorUtil.h"
+#include "trtUtil.h"
 
 clock_t start, end;
 Tensor *t, *tcuda;
@@ -218,6 +219,18 @@ void testThrustSort()
      printf("\n");
 }
 
+void testOpencv()
+{
+     std::vector<std::string> imglist = getImageList("data/example");
+     /* cv::Mat img = readImage(imglist.begin(), 1248, 768); */
+     std::string filename = imglist[0];
+     printf("filename: %s\n", filename.c_str());
+
+     cv::Mat img = cv::imread(filename);
+     printf("img.total(): %ld\n", img.total());
+     cv::resize(img, img, cv::Size(1248, 384));
+}
+
 int main(int argc, char *argv[])
 {
      /* init(); */
@@ -227,5 +240,6 @@ int main(int argc, char *argv[])
      /* testMultiplyElement(); */
      /* testTransformBboxSQD(); */
      /* testAnchor(); */
-     testThrustSort();
+     /* testThrustSort(); */
+     testOpencv();
 }
