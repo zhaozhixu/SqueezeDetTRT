@@ -5,6 +5,7 @@
 *.o
 *.wts
 testtrt
+sqdtrt
 GPATH
 GRTAGS
 GSYMS

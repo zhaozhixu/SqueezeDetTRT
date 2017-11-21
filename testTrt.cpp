@@ -31,8 +31,8 @@ using namespace plugin;
 
 static const int INPUT_N = 1;
 static const int INPUT_C = 3;
-static const int INPUT_H = 384;
-static const int INPUT_W = 1248;
+const int INPUT_H = 384;
+const int INPUT_W = 1248;
 static const int CONVOUT_C = 72;
 static const int CONVOUT_H = 24;
 static const int CONVOUT_W = 78;
@@ -64,12 +64,12 @@ std::string locateFile(const std::string& input)
     return locateFile(input, dirs);
 }
 
-IConvolutionLayer*
+ILayer*
 addFireLayer(INetworkDefinition* network, ITensor& input, int ns1x1, int ne1x1, int ne3x3,
              Weights wks1x1, Weights wke1x1, Weights wke3x3,
              Weights wbs1x1, Weights wbe1x1, Weights wbe3x3)
 {
-    auto sq1x1 = network->addConvolution(*input->getOutput(0), ns1x1, DimsHW{1, 1}, wks1x1, wbs1x1);
+    auto sq1x1 = network->addConvolution(input, ns1x1, DimsHW{1, 1}, wks1x1, wbs1x1);
     assert(sq1x1 != nullptr);
     sq1x1->setStride(DimsHW{1, 1});
     // sq1x1->setPadding(); TODO: add padding
@@ -101,11 +101,11 @@ createConvEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
 {
 	INetworkDefinition* network = builder->createNetwork();
 
-	auto data = network->addInput(INPUT_BLOB_NAME, dt, DimsCHW{INPUT_C, INPUT_H, INPUT_W});
+	auto data = network->addInput(INPUT_NAME, dt, DimsCHW{INPUT_C, INPUT_H, INPUT_W});
 	assert(data != nullptr);
 
     std::map<std::string, Weights> weightMap = loadWeights(locateFile("squeezedettrt.wts")); // ?
-	auto conv1 = network->addConvolution(*data->getOutput(0), 64, DimsHW{3, 3},
+	auto conv1 = network->addConvolution(*data, 64, DimsHW{3, 3},
 										 weightMap["conv1filter"],
 										 weightMap["conv1bias"]);
 	assert(conv1 != nullptr);
@@ -200,16 +200,16 @@ createConvEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
 							   weightMap["fire11_expand3x3_biases"]);
 
     // TODO: add dropout11
-    auto dropout11 = fire11;
+    ILayer *dropout11 = fire11;
 
-    auto preds = network->addConvolution(*dropout11->getOutput(0), NUM_OUTPUT, DimsHW{3, 3},
+    auto preds = network->addConvolution(*dropout11->getOutput(0), CONVOUT_C, DimsHW{3, 3},
 										 weightMap["conv12_kernels"],
 										 weightMap["conv12_biases"]);
     assert(preds != nullptr);
     preds->setStride(DimsHW{1, 1}); // what is xavier, stddev?
 
-	prob->getOutput(0)->setName(OUTPUT_BLOB_NAME);
-	network->markOutput(*prob->getOutput(0));
+	preds->getOutput(0)->setName(CONVOUT_NAME);
+	network->markOutput(*preds->getOutput(0));
 
 	// Build the engine
 	builder->setMaxBatchSize(maxBatchSize);
@@ -239,9 +239,9 @@ createInterpretEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
     auto bbox_delta_tensor = network->addInput(BBOX_INPUT_NAME, dt, DimsNCHW{INPUT_N, OUTPUT_BBOX_SIZE, 1,  CONVOUT_W * CONVOUT_H * ANCHORS_PER_GRID});
     assert(bbox_delta_tensor != nullptr);
 
-    auto class_softmax = network->addSoftMax(*class_tensor->getOutput(0));
+    auto class_softmax = network->addSoftMax(*class_tensor);
     assert(class_softmax != nullptr);
-    auto pred_conf = network->addActivation(*confidence_tensor->getOutput(0), ActivationType::kSIGMOID);
+    auto pred_conf = network->addActivation(*confidence_tensor, ActivationType::kSIGMOID);
     assert(pred_conf != nullptr);
 
     // auto pred_bbox_delta = network->addReshape(*bbox_delta_tensor, DimsNCHW{INPUT_N, OUTPUT_BBOX_SIZE, 1, 16848});
@@ -262,15 +262,10 @@ createInterpretEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
     // we don't need the network any more
     network->destroy();
 
-    // Once we have built the cuda engine, we can release all of our held memory.
-    for (auto &mem : weightMap)
-    {
-        free((void*)(mem.second.values));
-    }
     return engine;
 }
 
-void doInference(IExecutionContext& convContext, IExecutionContext& interpretContext, float* input, float* anchors, float *output, int batchSize)
+void doInference(IExecutionContext& convContext, IExecutionContext& interpretContext, float* input, float* anchors, float *outProbs, float *outClass, float *outBbox, int batchSize)
 {
 	const ICudaEngine& convEngine = convContext.getEngine();
     const ICudaEngine& interpretEngine = interpretContext.getEngine();
@@ -317,25 +312,25 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
     int classOutputDims[] = {INPUT_N, anchorsNum, OUTPUT_CLS_SIZE};
     int confOutputDims[] = {INPUT_N, anchorsNum, 1};
     int bboxOutputDims[] = {INPUT_N, anchorsNum, OUTPUT_BBOX_SIZE};
-    Tensor *convoutTensor = createTensor(interpretBuffers[convoutIndex], 4, convout_dims);
-    Tensor *classInputTensor = createTensor(interpretBuffers[classInputIndex], 4, classInputDims);
-    Tensor *confInputTensor = createTensor(interpretBuffers[confInputIndex], 4, confInputDims);
-    Tensor *bboxInputTensor = createTensor(interpretBuffers[bboxInputIndex], 4, bboxInputDims);
-    Tensor *classOutputTensor = createTensor(interpretBuffers[classOutputIndex], 3, classOutputDims);
-    Tensor *confOutputTensor = createTensor(interpretBuffers[confOutputIndex], 3, confOutputDims);
-    Tensor *bboxOutputTensor = createTensor(interpretBuffers[bboxOutputIndex], 3, bboxOutputDims);
+    Tensor *convoutTensor = createTensor((float *)interpretBuffers[convoutIndex], 4, convout_dims);
+    Tensor *classInputTensor = createTensor((float *)interpretBuffers[classInputIndex], 4, classInputDims);
+    Tensor *confInputTensor = createTensor((float *)interpretBuffers[confInputIndex], 4, confInputDims);
+    Tensor *bboxInputTensor = createTensor((float *)interpretBuffers[bboxInputIndex], 4, bboxInputDims);
+    Tensor *classOutputTensor = createTensor((float *)interpretBuffers[classOutputIndex], 3, classOutputDims);
+    Tensor *confOutputTensor = createTensor((float *)interpretBuffers[confOutputIndex], 3, confOutputDims);
+    Tensor *bboxOutputTensor = createTensor((float *)interpretBuffers[bboxOutputIndex], 3, bboxOutputDims);
 
     float *reduceMaxRes, *reduceArgRes, *mulRes, *bboxRes, *anchorsCuda;
-    CHECK(cudaMalloc(&reduceMaxRes, batchSize * anchorNum * sizeof(float)));
-    CHECK(cudaMalloc(&reduceArgRes, batchSize * anchorNum * sizeof(float)));
-    CHECK(cudaMalloc(&mulRes, batchSize * anchorNum * sizeof(float)));
-    CHECK(cudaMalloc(&bboxRes, batchSize * anchorNum * OUTPUT_BBOX_SIZE * sizeof(float)));
-    anchorsCuda = cloneMem(anchors, batchSize * anchorNum * ANCHOR_SIZE * sizeof(float), H2D);
-    int reduceMaxResDims[] = {INPUT_N, anchorNum, 1};
-    int reduceArgResDims[] = {INPUT_N, anchorNum, 1};
-    int mulResDims[] = {INPUT_N, anchorNum, 1};
-    int bboxResDims[] = {INPUT_N, anchorNum, OUTPUT_BBOX_SIZE};
-    int anchorsCudaDims[] = {INPUT_N, anchorNum, ANCHOR_SIZE};
+    CHECK(cudaMalloc(&reduceMaxRes, batchSize * anchorsNum * sizeof(float)));
+    CHECK(cudaMalloc(&reduceArgRes, batchSize * anchorsNum * sizeof(float)));
+    CHECK(cudaMalloc(&mulRes, batchSize * anchorsNum * sizeof(float)));
+    CHECK(cudaMalloc(&bboxRes, batchSize * anchorsNum * OUTPUT_BBOX_SIZE * sizeof(float)));
+    anchorsCuda = (float *)cloneMem(anchors, batchSize * anchorsNum * ANCHOR_SIZE * sizeof(float), H2D);
+    int reduceMaxResDims[] = {INPUT_N, anchorsNum, 1};
+    int reduceArgResDims[] = {INPUT_N, anchorsNum, 1};
+    int mulResDims[] = {INPUT_N, anchorsNum, 1};
+    int bboxResDims[] = {INPUT_N, anchorsNum, OUTPUT_BBOX_SIZE};
+    int anchorsCudaDims[] = {INPUT_N, anchorsNum, ANCHOR_SIZE};
     Tensor *reduceMaxResTensor = createTensor(reduceMaxRes, 3, reduceMaxResDims);
     Tensor *reduceArgResTensor = createTensor(reduceArgRes, 3, reduceArgResDims);
     Tensor *mulResTensor = createTensor(mulRes, 3, mulResDims);
@@ -344,6 +339,13 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
 
 	cudaStream_t stream;
 	CHECK(cudaStreamCreate(&stream));
+
+    // timer create, timer start
+    cudaEvent_t start, stop;
+    float time;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    cudaEventRecord(start, 0 );
 
 	// DMA the input to the GPU,  execute the batch asynchronously, and DMA it back:
 	CHECK(cudaMemcpyAsync(convBuffers[inputIndex], input, inputSize, cudaMemcpyHostToDevice, stream));
@@ -357,17 +359,39 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
     multiplyElement(reduceMaxResTensor, confOutputTensor, mulResTensor);
     transformBboxSQD(bboxOutputTensor, anchorsCudaTensor, bboxResTensor);
 
-	CHECK(cudaMemcpyAsync(output, buffers[outputIndex0], batchSize * OUTPUT_SIZE * sizeof(float), cudaMemcpyDeviceToHost, stream));
+	CHECK(cudaMemcpyAsync(outProbs, mulResTensor->data, mulResTensor->len * sizeof(float), cudaMemcpyDeviceToHost, stream));
+    CHECK(cudaMemcpyAsync(outClass, reduceArgResTensor->data, reduceArgResTensor->len * sizeof(float), cudaMemcpyDeviceToHost, stream));
+    CHECK(cudaMemcpyAsync(outBbox, bboxResTensor->data, bboxResTensor->len * sizeof(float), cudaMemcpyDeviceToHost, stream));
 	cudaStreamSynchronize(stream);
+
+    // timer stop, timer destroy
+    cudaEventRecord(stop, 0);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&time, start, stop);
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+
+    printf("detect in %f ms\n", time);
 
 	// release the stream and the buffers
 	cudaStreamDestroy(stream);
-	CHECK(cudaFree(buffers[inputIndex0]));
-	CHECK(cudaFree(buffers[outputIndex0]));
+    CHECK(cudaFree(convBuffers[inputIndex]));
+	CHECK(cudaFree(convBuffers[convoutIndex]));
+    CHECK(cudaFree(interpretBuffers[classInputIndex]));
+    CHECK(cudaFree(interpretBuffers[confInputIndex]));
+    CHECK(cudaFree(interpretBuffers[bboxInputIndex]));
+    CHECK(cudaFree(interpretBuffers[classOutputIndex]));
+    CHECK(cudaFree(interpretBuffers[confOutputIndex]));
+    CHECK(cudaFree(interpretBuffers[bboxOutputIndex]));
+    CHECK(cudaFree(reduceMaxRes));
+    CHECK(cudaFree(reduceArgRes));
+    CHECK(cudaFree(mulRes));
+    CHECK(cudaFree(bboxRes));
+    CHECK(cudaFree(anchorsCuda));
 }
 
 // maxBatch - NB must be at least as large as the batch we want to run with)
-void APIToModel(unsigned int maxBatch, IHostMemory **convModelStream, IHostMemory **interpretModelStream)
+void APIToModel(unsigned int maxBatchSize, IHostMemory **convModelStream, IHostMemory **interpretModelStream)
 {
 	// create the builder
 	IBuilder* builder = createInferBuilder(gLogger);
@@ -390,13 +414,14 @@ void APIToModel(unsigned int maxBatch, IHostMemory **convModelStream, IHostMemor
 float *prepareData(std::vector<std::string> &imageList)
 {
 	std::vector<cv::Mat> images; // available images
-	float* data = new float[N*INPUT_C*INPUT_H*INPUT_W];
+	float* data = new float[INPUT_N * INPUT_C * INPUT_H * INPUT_W];
 
+    int N = 1;// TODO: make it dynamic
 	// srand(unsigned(time(nullptr))); // read a random sample image
 	// std::random_shuffle(imageList.begin(), imageList.end(), [](int i) {return rand() % i; });
 	assert(images.size() <= imageList.size());
 	for (int i = 0; i < N; ++i)
-		images.push_back(readImage(imageList[i]));
+		images.push_back(readImage(imageList[i], INPUT_W, INPUT_H));
 
 	// pixel mean used by the SqueezeDet's author
 	float pixelMean[3]{ 103.939f, 116.779f, 123.68f }; // also in BGR order
@@ -413,11 +438,11 @@ float *prepareData(std::vector<std::string> &imageList)
     return data;
 }
 
-float *prepareAnchors(float *anchor_shape, int width, int height, int H, int W, int B)
+float *prepareAnchors(const float *anchor_shape, int width, int height, int H, int W, int B)
 {
     assert(anchor_shape);
     float center_x[W], center_y[H];
-    float *anchors = new float[H*W*B*4];
+    float *anchors = new float[H * W * B * 4];
     int anchors_dims[] = {W, H, B, 4};
     int i, j, k;
 
@@ -445,16 +470,20 @@ float *prepareAnchors(float *anchor_shape, int width, int height, int H, int W, 
 int main(int argc, char** argv)
 {
     if (argc < 2) {
-        cout << "usage: sqzdtrt IMAGE_DIR\n";
+        std::cout << "usage: sqdtrt IMAGE_DIR\n";
         exit(EXIT_SUCCESS);
     }
 
     std::vector<std::string> imageList = getImageList(argv[1]);
-    float *data = prepareData(imgList);
+    float *data = prepareData(imageList);
     float *anchors = prepareAnchors(ANCHOR_SHAPE, INPUT_W, INPUT_H, CONVOUT_H, CONVOUT_W, ANCHORS_PER_GRID);
-    float *outProbs = new float[INPUT_N * TOP_N_DECTION];
-    float *outClass = new float[INPUT_N * TOP_N_DECTION];
-    float *outBbox = new float[INPUT_N * TOP_N_DECTION * OUTPUT_BBOX_SIZE];
+    // float *outProbs = new float[INPUT_N * TOP_N_DECTION];
+    // float *outClass = new float[INPUT_N * TOP_N_DECTION];
+    // float *outBbox = new float[INPUT_N * TOP_N_DECTION * OUTPUT_BBOX_SIZE];
+    int anchorsNum = CONVOUT_H * CONVOUT_W * ANCHORS_PER_GRID;
+    float *outProbs = new float[INPUT_N * anchorsNum];
+    float *outClass = new float[INPUT_N * anchorsNum];
+    float *outBbox = new float[INPUT_N * anchorsNum * OUTPUT_BBOX_SIZE];
 
     // create engines
 	IHostMemory *convModelStream{ nullptr };
@@ -469,19 +498,20 @@ int main(int argc, char** argv)
     IExecutionContext *interpretContext = interpretEngine->createExecutionContext();
 
 	// run inference
-    doInference(convContext, interpretContext, data, anchors,float* output, INPUT_N);
-
-    for (int i = 0; i < OUTPUT_SIZE; i++) {
-        printf("%.2f ", output[i]);
-    }
-    printf("\n");
+    doInference(*convContext, *interpretContext, data, anchors, outProbs, outClass, outBbox, INPUT_N);
 
 	// destroy the engine
-	context->destroy();
-	engine->destroy();
+	convContext->destroy();
+    interpretContext->destroy();
+	convEngine->destroy();
+    interpretEngine->destroy();
 	runtime->destroy();
 
 	// delete[] data;
-	delete[] output;
+    delete[] data;
+    delete[] anchors;
+	delete[] outProbs;
+    delete[] outClass;
+    delete[] outBbox;
 	return 0;
 }

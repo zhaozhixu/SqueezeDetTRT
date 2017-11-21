@@ -1,5 +1,6 @@
 #include <time.h>
 #include <stdio.h>
+#include <thrust/sort.h>
 #include "tensorUtil.h"
 
 clock_t start, end;
@@ -189,13 +190,42 @@ void testAnchor()
      printTensor(anchor_tensor, "%.2f");
 }
 
+void testThrustSort()
+{
+     int n = 9;
+     float f[] = {3.1, 9.2, 7.3, 5.4, 4.5, 0.6, 2.7, 6.8, 1.9};
+     int id[] = {1, 2, 3, 4, 5, 6, 7, 8, 9};
+     float *f_device = (float *)cloneMem(f, n * sizeof(float), H2D);
+     int *id_device = (int *)cloneMem(id, n * sizeof(int), H2D);
+     thrust::sort_by_key(f_device, f_device + n, id_device);
+     float *f_host = (float *)cloneMem(f_device, n * sizeof(float), D2H);
+     int *id_host = (int *)cloneMem(id_device, n * sizeof(int), D2H);
+     for (int i = 0; i < n; i++) {
+          printf("%.2f ", f[i]);
+     }
+     printf("\n");
+     for (int i = 0; i < n; i++) {
+          printf("%d ", id[i]);
+     }
+     printf("\n");
+     for (int i = 0; i < n; i++) {
+          printf("%.2f ", f_host[i]);
+     }
+     printf("\n");
+     for (int i = 0; i < n; i++) {
+          printf("%d ", id_host[i]);
+     }
+     printf("\n");
+}
+
 int main(int argc, char *argv[])
 {
-     init();
-     testSliceTensor();
-     testReshapeTensor();
-     testReduceArgMax();
-     testMultiplyElement();
-     testTransformBboxSQD();
-     testAnchor();
+     /* init(); */
+     /* testSliceTensor(); */
+     /* testReshapeTensor(); */
+     /* testReduceArgMax(); */
+     /* testMultiplyElement(); */
+     /* testTransformBboxSQD(); */
+     /* testAnchor(); */
+     testThrustSort();
 }

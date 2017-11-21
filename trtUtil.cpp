@@ -1,5 +1,42 @@
 #include <stdlib.h>
+#include <dirent.h>
+#include <unistd.h>
+#include <sys/stat.h>
 #include <opencv2/opencv.hpp>
+#include <fstream>
+#include "trtUtil.h"
+
+extern const int INPUT_H;
+extern const int INPUT_W;
+
+std::vector<std::string> getImageList(const char *pathname)
+{
+     struct stat statbuf;
+     struct dirent *dirp;
+     DIR *dp;
+     std::vector<std::string> imgList;
+
+     if (stat(pathname, &statbuf) < 0) {
+          perror("stat failed");
+          exit(EXIT_FAILURE);
+     }
+     if (S_ISDIR(statbuf.st_mode) == 0) {
+          fprintf(stderr, "'%s' not a directory.\n", pathname);
+          exit(EXIT_FAILURE);
+     }
+     if ((dp = opendir(pathname)) == NULL) {
+          perror("cannot read directory");
+          exit(EXIT_FAILURE);
+     }
+
+     while ((dirp = readdir(dp)) != NULL) {
+          if (!strcmp(dirp->d_name, ".") || !strcmp(dirp->d_name, ".."))
+               continue;
+          // TODO: filter jpeg
+          imgList.push_back(std::string(dirp->d_name));
+     }
+     return imgList;
+}
 
 // Our weight files are in a very simple space delimited format.
 // [type] [size] <data x size in hex>
@@ -39,26 +76,9 @@ std::map<std::string, Weights> loadWeights(const std::string file)
     return weightMap;
 }
 
-cv::Mat readImage(const std::string& filename)
+cv::Mat readImage(const std::string& filename, int width, int height)
 {
     cv::Mat img = cv::imread(filename);
-    cv::resize(img, img, Size(INPUT_W, INPUT_H));
+    cv::resize(img, img, cv::Size(width, height));
     return img;
-}
-
-
-void APIToModel(unsigned int maxBatchSize, // batch size - NB must be at least as large as the batch we want to run with)
-                IHostMemory **modelStream)
-{
-     // create the builder
-     IBuilder* builder = createInferBuilder(gLogger);
-
-     // create the model to populate the network, then set the outputs and create an engine
-     ICudaEngine* engine = createEngine(maxBatchSize, builder, DataType::kFLOAT);
-
-     assert(engine != nullptr);
-     // serialize the engine, then close everything down
-     (*modelStream) = engine->serialize();
-     engine->destroy();
-     builder->destroy();
 }
