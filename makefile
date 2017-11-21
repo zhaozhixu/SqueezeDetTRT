@@ -4,6 +4,7 @@ TARGET = sqdtrt
 
 TRIPLE?=x86_64-linux
 CUDA_INSTALL_DIR = /usr/local/cuda-8.0
+CUDNN_INSTALL_DIR = /usr/local/cuda-8.0
 CUDA_LIBDIR = lib
 CUDNN_LIBDIR = lib64
 INCPATHS    =-I"$(CUDA_INSTALL_DIR)/include" -I"/usr/local/include" -I"../include" -I"../common" -I"$(CUDNN_INSTALL_DIR)/include" -I"../../include" $(TGT_INCLUDES)
@@ -11,8 +12,10 @@ LIBPATHS    =-L"$(CUDA_INSTALL_DIR)/targets/$(TRIPLE)/$(CUDA_LIBDIR)" -L"/usr/lo
 
 # COMMON_LIBS = -lcudnn -lcublas -lcudart_static -lnvToolsExt -lcudart
 COMMON_LIBS = -lcudnn -lcudart -lcudart_static
-LIBS  =-lnvinfer -lnvparsers -lnvinfer_plugin $(COMMON_LIBS)
-DLIBS =-lnvinfer -lnvparsers -lnvinfer_plugin $(COMMON_LIBS)
+# LIBS  =-lnvinfer -lnvparsers -lnvinfer_plugin $(COMMON_LIBS)
+# DLIBS =-lnvinfer -lnvparsers -lnvinfer_plugin $(COMMON_LIBS)
+LIBS  =-lnvinfer -lnvinfer_plugin $(COMMON_LIBS)
+DLIBS =-lnvinfer -lnvinfer_plugin $(COMMON_LIBS)
 
 COMMON_FLAGS += -std=c++11 $(INCPATHS) `pkg-config --cflags --libs opencv`
 CFLAGS=$(COMMON_FLAGS)
@@ -23,7 +26,7 @@ LFLAGS=$(COMMON_LD_FLAGS)
 LFLAGSD=$(COMMON_LD_FLAGS)
 
 $(TARGET): testTrt.o common.o trtUtil.o tensorUtil.o tensorCuda.o
-	$(CC) -Wall testTrt.o common.o trtUtil.o tensorUtil.o tensorCuda.o -o $(TARGET) $(CFLAGSD) $(LIBPATHS) $(COMMON_LIBS)
+	$(CC) -Wall testTrt.o common.o trtUtil.o tensorUtil.o tensorCuda.o -o $(TARGET) $(CFLAGSD) $(LIBPATHS) $(LIBS)
 testTrt.o: testTrt.cpp tensorUtil.h tensorCuda.h common.h
 	$(CUCC) -c testTrt.cpp $(CFLAGSD) $(LFLAGSD) $(LIBS)
 common.o: common.cpp common.h

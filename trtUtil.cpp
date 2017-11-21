@@ -79,6 +79,8 @@ std::map<std::string, Weights> loadWeights(const std::string file)
 cv::Mat readImage(const std::string& filename, int width, int height)
 {
     cv::Mat img = cv::imread(filename);
+    printf("filename: %s\n", filename.c_str());
+    printf("img.total(): %ld\n", img.total());
     cv::resize(img, img, cv::Size(width, height));
     return img;
 }
