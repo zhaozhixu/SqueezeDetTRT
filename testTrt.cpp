@@ -60,7 +60,7 @@ const float ANCHOR_SHAPE[] = {36, 37, 366, 174, 115, 59, /* w x h, 2 elements on
 
 std::string locateFile(const std::string& input)
 {
-     std::vector<std::string> dirs{"samples/squeezeDetTrt/data/"};
+     std::vector<std::string> dirs{"data/"};
      return locateFile(input, dirs);
 }
 
@@ -104,7 +104,7 @@ createConvEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
      auto data = network->addInput(INPUT_NAME, dt, DimsCHW{INPUT_C, INPUT_H, INPUT_W});
      assert(data != nullptr);
 
-     std::map<std::string, Weights> weightMap = loadWeights(locateFile("squeezedettrt.wts")); // ?
+     std::map<std::string, Weights> weightMap = loadWeights(locateFile("sqdtrt.wts")); // ?
      auto conv1 = network->addConvolution(*data, 64, DimsHW{3, 3},
 					  weightMap["conv1filter"],
 					  weightMap["conv1bias"]);
