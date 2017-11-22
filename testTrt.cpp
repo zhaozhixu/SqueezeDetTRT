@@ -244,23 +244,16 @@ createInterpretEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
      assert(class_tensor != nullptr);
      auto confidence_tensor = network->addInput(CONF_INPUT_NAME, dt, DimsNCHW{INPUT_N, 1, 1, CONVOUT_W * CONVOUT_H * ANCHORS_PER_GRID});
      assert(confidence_tensor != nullptr);
-     auto bbox_delta_tensor = network->addInput(BBOX_INPUT_NAME, dt, DimsNCHW{INPUT_N, OUTPUT_BBOX_SIZE, 1,  CONVOUT_W * CONVOUT_H * ANCHORS_PER_GRID});
-     assert(bbox_delta_tensor != nullptr);
 
      auto class_softmax = network->addSoftMax(*class_tensor);
      assert(class_softmax != nullptr);
      auto pred_conf = network->addActivation(*confidence_tensor, ActivationType::kSIGMOID);
      assert(pred_conf != nullptr);
 
-     // auto pred_bbox_delta = network->addReshape(*bbox_delta_tensor, DimsNCHW{INPUT_N, OUTPUT_BBOX_SIZE, 1, 16848});
-     // assert(pred_bbox_delta != nullptr);
-
      class_softmax->getOutput(0)->setName(CLASS_OUTPUT_NAME);
      pred_conf->getOutput(0)->setName(CONF_OUTPUT_NAME);
-     bbox_delta_tensor->setName(BBOX_OUTPUT_NAME);
      network->markOutput(*class_softmax->getOutput(0));
      network->markOutput(*pred_conf->getOutput(0));
-     network->markOutput(*bbox_delta_tensor);
 
      // Build the engine
      builder->setMaxBatchSize(maxBatchSize);
@@ -281,7 +274,7 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      assert(convEngine.getNbBindings() == 2);
      assert(interpretEngine.getNbBindings() == 6);
      void* convBuffers[2];
-     void* interpretBuffers[6];
+     void* interpretBuffers[4];
 
      // In order to bind the buffers, we need to know the names of the input and output tensors.
      // note that indices are guaranteed to be less than IEngine::getNbBindings()
@@ -290,11 +283,10 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
           classInputIndex = interpretEngine.getBindingIndex(CLASS_INPUT_NAME),
           confInputIndex = interpretEngine.getBindingIndex(CONF_INPUT_NAME),
           classOutputIndex = interpretEngine.getBindingIndex(CLASS_OUTPUT_NAME),
-          confOutputIndex = interpretEngine.getBindingIndex(CONF_OUTPUT_NAME),
-          bboxInputIndex = interpretEngine.getBindingIndex(BBOX_INPUT_NAME),
-          bboxOutputIndex = interpretEngine.getBindingIndex(BBOX_OUTPUT_NAME);
+          confOutputIndex = interpretEngine.getBindingIndex(CONF_OUTPUT_NAME);
 
      // create GPU buffers and a stream
+     float *bboxInput; // don't need to go into interpret engine
      int anchorsNum = CONVOUT_W * CONVOUT_H * ANCHORS_PER_GRID;
      size_t inputSize = batchSize * INPUT_C * INPUT_H * INPUT_W * sizeof(float);
      size_t convoutSize = batchSize * CONVOUT_H * CONVOUT_W * CONVOUT_C * sizeof(float);
@@ -303,15 +295,13 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      size_t bboxInputSize = batchSize * CONVOUT_H * CONVOUT_W * BBOX_SLICE_C * sizeof(float);
      size_t classOutputSize = batchSize * OUTPUT_CLS_SIZE * anchorsNum * sizeof(float);
      size_t confOutputSize = batchSize * anchorsNum * sizeof(float);
-     size_t bboxOutputSize = batchSize * anchorsNum * OUTPUT_BBOX_SIZE * sizeof(float);
      CHECK(cudaMalloc(&convBuffers[inputIndex], inputSize));
      CHECK(cudaMalloc(&convBuffers[convoutIndex], convoutSize));
      CHECK(cudaMalloc(&interpretBuffers[classInputIndex], classInputSize));
      CHECK(cudaMalloc(&interpretBuffers[confInputIndex], confInputSize));
-     CHECK(cudaMalloc(&interpretBuffers[bboxInputIndex], bboxInputSize));
+     CHECK(cudaMalloc(&bboxInput, bboxInputSize));
      CHECK(cudaMalloc(&interpretBuffers[classOutputIndex], classOutputSize));
      CHECK(cudaMalloc(&interpretBuffers[confOutputIndex], confOutputSize));
-     CHECK(cudaMalloc(&interpretBuffers[bboxOutputIndex], bboxOutputSize));
 
      int convout_dims[] = {INPUT_N, CONVOUT_H, CONVOUT_W, CONVOUT_C};
      int classInputDims[] = {INPUT_N, CONVOUT_H, CONVOUT_W, CLASS_SLICE_C};
@@ -323,10 +313,10 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      Tensor *convoutTensor = createTensor((float *)interpretBuffers[convoutIndex], 4, convout_dims);
      Tensor *classInputTensor = createTensor((float *)interpretBuffers[classInputIndex], 4, classInputDims);
      Tensor *confInputTensor = createTensor((float *)interpretBuffers[confInputIndex], 4, confInputDims);
-     Tensor *bboxInputTensor = createTensor((float *)interpretBuffers[bboxInputIndex], 4, bboxInputDims);
+     Tensor *bboxInputTensor = createTensor(bboxInput, 4, bboxInputDims);
      Tensor *classOutputTensor = createTensor((float *)interpretBuffers[classOutputIndex], 3, classOutputDims);
      Tensor *confOutputTensor = createTensor((float *)interpretBuffers[confOutputIndex], 3, confOutputDims);
-     Tensor *bboxOutputTensor = createTensor((float *)interpretBuffers[bboxOutputIndex], 3, bboxOutputDims);
+     Tensor *bboxOutputTensor = reshapeTensor(bboxInputTensor, 3, bboxOutputDims);
 
      float *reduceMaxRes, *reduceArgRes, *mulRes, *bboxRes, *anchorsCuda;
      CHECK(cudaMalloc(&reduceMaxRes, batchSize * anchorsNum * sizeof(float)));
@@ -387,10 +377,9 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      CHECK(cudaFree(convBuffers[convoutIndex]));
      CHECK(cudaFree(interpretBuffers[classInputIndex]));
      CHECK(cudaFree(interpretBuffers[confInputIndex]));
-     CHECK(cudaFree(interpretBuffers[bboxInputIndex]));
+     CHECK(cudaFree(bboxInput));
      CHECK(cudaFree(interpretBuffers[classOutputIndex]));
      CHECK(cudaFree(interpretBuffers[confOutputIndex]));
-     CHECK(cudaFree(interpretBuffers[bboxOutputIndex]));
      CHECK(cudaFree(reduceMaxRes));
      CHECK(cudaFree(reduceArgRes));
      CHECK(cudaFree(mulRes));
