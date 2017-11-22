@@ -109,8 +109,8 @@ createConvEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
 
      std::map<std::string, Weights> weightMap = loadWeights(locateFile("sqdtrt.wts")); // ?
      auto conv1 = network->addConvolution(*data, 64, DimsHW{3, 3},
-                                          weightMap["conv1filter"],
-                                          weightMap["conv1bias"]);
+                                          weightMap["conv1_kernels"],
+                                          weightMap["conv1_bias"]);
      assert(conv1 != nullptr);
      conv1->setStride(DimsHW{2, 2});
      conv1->setPadding(DimsHW{1, 1});
@@ -225,7 +225,7 @@ createConvEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
 
      auto engine = builder->buildCudaEngine(*network);
      // we don't need the network any more
-     network->destroy();
+     // network->destroy();	// SIGSEGV, don't know why
 
      // Once we have built the cuda engine, we can release all of our held memory.
      for (auto &mem : weightMap)
