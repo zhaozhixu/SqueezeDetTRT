@@ -31,8 +31,10 @@ using namespace plugin;
 
 static const int INPUT_N = 1;
 static const int INPUT_C = 3;
-const int INPUT_H = 384;
-const int INPUT_W = 1248;
+static const int INPUT_H = 384;
+static const int INPUT_W = 1248;
+// static const int INPUT_H_PADDED = 385; // TensorRT doesn't support asymetric padding,
+// static const int INPUT_W_PADDED = 1249; // so resize to padded size using OpenCV
 static const int CONVOUT_C = 72;
 static const int CONVOUT_H = 24;
 static const int CONVOUT_W = 78;
@@ -85,6 +87,7 @@ addFireLayer(INetworkDefinition* network, ITensor& input, int ns1x1, int ne1x1, 
      auto ex3x3 = network->addConvolution(*relu1->getOutput(0), ne3x3, DimsHW{3, 3}, wke3x3, wbe3x3);
      assert(ex3x3 != nullptr);
      ex3x3->setStride(DimsHW{1, 1});
+     ex3x3->setPadding(DimsHW{1, 1});
      auto relu3 = network->addActivation(*ex3x3->getOutput(0), ActivationType::kRELU);
      assert(relu3 != nullptr);
 
@@ -106,107 +109,112 @@ createConvEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
 
      std::map<std::string, Weights> weightMap = loadWeights(locateFile("sqdtrt.wts")); // ?
      auto conv1 = network->addConvolution(*data, 64, DimsHW{3, 3},
-					  weightMap["conv1filter"],
-					  weightMap["conv1bias"]);
+                                          weightMap["conv1filter"],
+                                          weightMap["conv1bias"]);
      assert(conv1 != nullptr);
      conv1->setStride(DimsHW{2, 2});
+     conv1->setPadding(DimsHW{1, 1});
      auto relu1 = network->addActivation(*conv1->getOutput(0), ActivationType::kRELU);
      assert(relu1 != nullptr);
 
      auto pool1 = network->addPooling(*relu1->getOutput(0), PoolingType::kMAX, DimsHW{3, 3});
      assert(pool1 != nullptr);
      pool1->setStride(DimsHW{2, 2});
+     pool1->setPadding(DimsHW{1, 1});
 
      auto fire2 = addFireLayer(network, *pool1->getOutput(0), 16, 64, 64,
-			       weightMap["fire2_squeeze1x1_kernels"],
-			       weightMap["fire2_expand1x1_kernels"],
-			       weightMap["fire2_expand3x3_kernels"],
-			       weightMap["fire2_squeeze1x1_biases"],
-			       weightMap["fire2_expand1x1_biases"],
-			       weightMap["fire2_expand3x3_biases"]);
+                               weightMap["fire2_squeeze1x1_kernels"],
+                               weightMap["fire2_expand1x1_kernels"],
+                               weightMap["fire2_expand3x3_kernels"],
+                               weightMap["fire2_squeeze1x1_biases"],
+                               weightMap["fire2_expand1x1_biases"],
+                               weightMap["fire2_expand3x3_biases"]);
      auto fire3 = addFireLayer(network, *fire2->getOutput(0), 16, 64, 64,
-			       weightMap["fire3_squeeze1x1_kernels"],
-			       weightMap["fire3_expand1x1_kernels"],
-			       weightMap["fire3_expand3x3_kernels"],
-			       weightMap["fire3_squeeze1x1_biases"],
-			       weightMap["fire3_expand1x1_biases"],
-			       weightMap["fire3_expand3x3_biases"]);
+                               weightMap["fire3_squeeze1x1_kernels"],
+                               weightMap["fire3_expand1x1_kernels"],
+                               weightMap["fire3_expand3x3_kernels"],
+                               weightMap["fire3_squeeze1x1_biases"],
+                               weightMap["fire3_expand1x1_biases"],
+                               weightMap["fire3_expand3x3_biases"]);
 
      auto pool3 = network->addPooling(*fire3->getOutput(0), PoolingType::kMAX, DimsHW{3, 3});
      assert(pool3 != nullptr);
      pool3->setStride(DimsHW{2, 2});
+     pool3->setPadding(DimsHW{1, 1});
 
      auto fire4 = addFireLayer(network, *pool3->getOutput(0), 32, 128, 128,
-			       weightMap["fire4_squeeze1x1_kernels"],
-			       weightMap["fire4_expand1x1_kernels"],
-			       weightMap["fire4_expand3x3_kernels"],
-			       weightMap["fire4_squeeze1x1_biases"],
-			       weightMap["fire4_expand1x1_biases"],
-			       weightMap["fire4_expand3x3_biases"]);
+                               weightMap["fire4_squeeze1x1_kernels"],
+                               weightMap["fire4_expand1x1_kernels"],
+                               weightMap["fire4_expand3x3_kernels"],
+                               weightMap["fire4_squeeze1x1_biases"],
+                               weightMap["fire4_expand1x1_biases"],
+                               weightMap["fire4_expand3x3_biases"]);
      auto fire5 = addFireLayer(network, *fire4->getOutput(0), 32, 128, 128,
-			       weightMap["fire5_squeeze1x1_kernels"],
-			       weightMap["fire5_expand1x1_kernels"],
-			       weightMap["fire5_expand3x3_kernels"],
-			       weightMap["fire5_squeeze1x1_biases"],
-			       weightMap["fire5_expand1x1_biases"],
-			       weightMap["fire5_expand3x3_biases"]);
+                               weightMap["fire5_squeeze1x1_kernels"],
+                               weightMap["fire5_expand1x1_kernels"],
+                               weightMap["fire5_expand3x3_kernels"],
+                               weightMap["fire5_squeeze1x1_biases"],
+                               weightMap["fire5_expand1x1_biases"],
+                               weightMap["fire5_expand3x3_biases"]);
 
      auto pool5 = network->addPooling(*fire5->getOutput(0), PoolingType::kMAX, DimsHW{3, 3});
      assert(pool3 != nullptr);
      pool3->setStride(DimsHW{2, 2});
+     pool5->setPadding(DimsHW{1, 1});
 
      auto fire6 = addFireLayer(network, *pool5->getOutput(0), 48, 192, 192,
-			       weightMap["fire6_squeeze1x1_kernels"],
-			       weightMap["fire6_expand1x1_kernels"],
-			       weightMap["fire6_expand3x3_kernels"],
-			       weightMap["fire6_squeeze1x1_biases"],
-			       weightMap["fire6_expand1x1_biases"],
-			       weightMap["fire6_expand3x3_biases"]);
+                               weightMap["fire6_squeeze1x1_kernels"],
+                               weightMap["fire6_expand1x1_kernels"],
+                               weightMap["fire6_expand3x3_kernels"],
+                               weightMap["fire6_squeeze1x1_biases"],
+                               weightMap["fire6_expand1x1_biases"],
+                               weightMap["fire6_expand3x3_biases"]);
      auto fire7 = addFireLayer(network, *fire6->getOutput(0), 48, 192, 192,
-			       weightMap["fire7_squeeze1x1_kernels"],
-			       weightMap["fire7_expand1x1_kernels"],
-			       weightMap["fire7_expand3x3_kernels"],
-			       weightMap["fire7_squeeze1x1_biases"],
-			       weightMap["fire7_expand1x1_biases"],
-			       weightMap["fire7_expand3x3_biases"]);
+                               weightMap["fire7_squeeze1x1_kernels"],
+                               weightMap["fire7_expand1x1_kernels"],
+                               weightMap["fire7_expand3x3_kernels"],
+                               weightMap["fire7_squeeze1x1_biases"],
+                               weightMap["fire7_expand1x1_biases"],
+                               weightMap["fire7_expand3x3_biases"]);
      auto fire8 = addFireLayer(network, *fire7->getOutput(0), 64, 256, 256,
-			       weightMap["fire8_squeeze1x1_kernels"],
-			       weightMap["fire8_expand1x1_kernels"],
-			       weightMap["fire8_expand3x3_kernels"],
-			       weightMap["fire8_squeeze1x1_biases"],
-			       weightMap["fire8_expand1x1_biases"],
-			       weightMap["fire8_expand3x3_biases"]);
+                               weightMap["fire8_squeeze1x1_kernels"],
+                               weightMap["fire8_expand1x1_kernels"],
+                               weightMap["fire8_expand3x3_kernels"],
+                               weightMap["fire8_squeeze1x1_biases"],
+                               weightMap["fire8_expand1x1_biases"],
+                               weightMap["fire8_expand3x3_biases"]);
      auto fire9 = addFireLayer(network, *fire8->getOutput(0), 64, 256, 256,
-			       weightMap["fire9_squeeze1x1_kernels"],
-			       weightMap["fire9_expand1x1_kernels"],
-			       weightMap["fire9_expand3x3_kernels"],
-			       weightMap["fire9_squeeze1x1_biases"],
-			       weightMap["fire9_expand1x1_biases"],
-			       weightMap["fire9_expand3x3_biases"]);
+                               weightMap["fire9_squeeze1x1_kernels"],
+                               weightMap["fire9_expand1x1_kernels"],
+                               weightMap["fire9_expand3x3_kernels"],
+                               weightMap["fire9_squeeze1x1_biases"],
+                               weightMap["fire9_expand1x1_biases"],
+                               weightMap["fire9_expand3x3_biases"]);
 
      auto fire10 = addFireLayer(network, *fire9->getOutput(0), 96, 384, 384,
-				weightMap["fire10_squeeze1x1_kernels"],
-				weightMap["fire10_expand1x1_kernels"],
-				weightMap["fire10_expand3x3_kernels"],
-				weightMap["fire10_squeeze1x1_biases"],
-				weightMap["fire10_expand1x1_biases"],
-				weightMap["fire10_expand3x3_biases"]);
+                                weightMap["fire10_squeeze1x1_kernels"],
+                                weightMap["fire10_expand1x1_kernels"],
+                                weightMap["fire10_expand3x3_kernels"],
+                                weightMap["fire10_squeeze1x1_biases"],
+                                weightMap["fire10_expand1x1_biases"],
+                                weightMap["fire10_expand3x3_biases"]);
      auto fire11 = addFireLayer(network, *fire10->getOutput(0), 96, 384, 384,
-				weightMap["fire11_squeeze1x1_kernels"],
-				weightMap["fire11_expand1x1_kernels"],
-				weightMap["fire11_expand3x3_kernels"],
-				weightMap["fire11_squeeze1x1_biases"],
-				weightMap["fire11_expand1x1_biases"],
-				weightMap["fire11_expand3x3_biases"]);
+                                weightMap["fire11_squeeze1x1_kernels"],
+                                weightMap["fire11_expand1x1_kernels"],
+                                weightMap["fire11_expand3x3_kernels"],
+                                weightMap["fire11_squeeze1x1_biases"],
+                                weightMap["fire11_expand1x1_biases"],
+                                weightMap["fire11_expand3x3_biases"]);
 
      // TODO: add dropout11
      ILayer *dropout11 = fire11;
 
      auto preds = network->addConvolution(*dropout11->getOutput(0), CONVOUT_C, DimsHW{3, 3},
-					  weightMap["conv12_kernels"],
-					  weightMap["conv12_biases"]);
+                                          weightMap["conv12_kernels"],
+                                          weightMap["conv12_biases"]);
      assert(preds != nullptr);
      preds->setStride(DimsHW{1, 1}); // what is xavier, stddev?
+     preds->setPadding(DimsHW{1, 1});
 
      preds->getOutput(0)->setName(CONVOUT_NAME);
      network->markOutput(*preds->getOutput(0));
@@ -222,7 +230,7 @@ createConvEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
      // Once we have built the cuda engine, we can release all of our held memory.
      for (auto &mem : weightMap)
      {
-	  free((void*)(mem.second.values));
+          free((void*)(mem.second.values));
      }
      return engine;
 }
@@ -278,13 +286,13 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      // In order to bind the buffers, we need to know the names of the input and output tensors.
      // note that indices are guaranteed to be less than IEngine::getNbBindings()
      int inputIndex = convEngine.getBindingIndex(INPUT_NAME),
-	  convoutIndex = convEngine.getBindingIndex(CONVOUT_NAME),
-	  classInputIndex = interpretEngine.getBindingIndex(CLASS_INPUT_NAME),
-	  confInputIndex = interpretEngine.getBindingIndex(CONF_INPUT_NAME),
-	  classOutputIndex = interpretEngine.getBindingIndex(CLASS_OUTPUT_NAME),
-	  confOutputIndex = interpretEngine.getBindingIndex(CONF_OUTPUT_NAME),
-	  bboxInputIndex = interpretEngine.getBindingIndex(BBOX_INPUT_NAME),
-	  bboxOutputIndex = interpretEngine.getBindingIndex(BBOX_OUTPUT_NAME);
+          convoutIndex = convEngine.getBindingIndex(CONVOUT_NAME),
+          classInputIndex = interpretEngine.getBindingIndex(CLASS_INPUT_NAME),
+          confInputIndex = interpretEngine.getBindingIndex(CONF_INPUT_NAME),
+          classOutputIndex = interpretEngine.getBindingIndex(CLASS_OUTPUT_NAME),
+          confOutputIndex = interpretEngine.getBindingIndex(CONF_OUTPUT_NAME),
+          bboxInputIndex = interpretEngine.getBindingIndex(BBOX_INPUT_NAME),
+          bboxOutputIndex = interpretEngine.getBindingIndex(BBOX_OUTPUT_NAME);
 
      // create GPU buffers and a stream
      int anchorsNum = CONVOUT_W * CONVOUT_H * ANCHORS_PER_GRID;
@@ -421,18 +429,18 @@ float *prepareData(std::vector<std::string> &imageList)
      // std::random_shuffle(imageList.begin(), imageList.end(), [](int i) {return rand() % i; });
      assert(images.size() <= imageList.size());
      for (int i = 0; i < N; ++i)
-	  images.push_back(readImage(imageList[i], INPUT_W, INPUT_H));
+          images.push_back(readImage(imageList[i], INPUT_W, INPUT_H));
 
      // pixel mean used by the SqueezeDet's author
      float pixelMean[3]{ 103.939f, 116.779f, 123.68f }; // also in BGR order
      for (int i = 0, volImg = INPUT_C*INPUT_H*INPUT_W; i < N; ++i)
      {
-	  for (int c = 0; c < INPUT_C; ++c)
-	  {
-	       // the color image to input should be in BGR order
-	       for (unsigned j = 0, volChl = INPUT_H*INPUT_W; j < volChl; ++j)
-		    data[i*volImg + c*volChl + j] = float(images[i].data[j*INPUT_C]) - pixelMean[c];
-	  }
+          for (int c = 0; c < INPUT_C; ++c)
+          {
+               // the color image to input should be in BGR order
+               for (unsigned j = 0, volChl = INPUT_H*INPUT_W; j < volChl; ++j)
+                    data[i*volImg + c*volChl + j] = float(images[i].data[j*INPUT_C]) - pixelMean[c];
+          }
      }
 
      return data;
@@ -447,22 +455,22 @@ float *prepareAnchors(const float *anchor_shape, int width, int height, int H, i
      int i, j, k;
 
      for (i = 1; i <= W; i++)
-	  center_x[i-1] = i * width / (W + 1.0);
+          center_x[i-1] = i * width / (W + 1.0);
      for (i = 1; i <= H; i++)
-	  center_y[i-1] = i * height / (H + 1.0);
+          center_y[i-1] = i * height / (H + 1.0);
 
      int w_vol = H * B * 4;
      int h_vol = B * 4;
      int b_vol = 4;
      for (i = 0; i < W; i++) {
-	  for (j = 0; j < H; j++) {
-	       for (k = 0; k < B; k++) {
-		    anchors[i*w_vol+j*h_vol+k*b_vol] = center_x[i];
-		    anchors[i*w_vol+j*h_vol+k*b_vol+1] = center_y[j];
-		    anchors[i*w_vol+j*h_vol+k*b_vol+2] = anchor_shape[k*2];
-		    anchors[i*w_vol+j*h_vol+k*b_vol+3] = anchor_shape[k*2+1];
-	       }
-	  }
+          for (j = 0; j < H; j++) {
+               for (k = 0; k < B; k++) {
+                    anchors[i*w_vol+j*h_vol+k*b_vol] = center_x[i];
+                    anchors[i*w_vol+j*h_vol+k*b_vol+1] = center_y[j];
+                    anchors[i*w_vol+j*h_vol+k*b_vol+2] = anchor_shape[k*2];
+                    anchors[i*w_vol+j*h_vol+k*b_vol+3] = anchor_shape[k*2+1];
+               }
+          }
      }
      return anchors;
 }
@@ -470,8 +478,8 @@ float *prepareAnchors(const float *anchor_shape, int width, int height, int H, i
 int main(int argc, char** argv)
 {
      if (argc < 2) {
-	  std::cout << "usage: sqdtrt IMAGE_DIR\n";
-	  exit(EXIT_SUCCESS);
+          std::cout << "usage: sqdtrt IMAGE_DIR\n";
+          exit(EXIT_SUCCESS);
      }
 
      std::vector<std::string> imageList = getImageList(argv[1]);
@@ -508,7 +516,6 @@ int main(int argc, char** argv)
      interpretEngine->destroy();
      runtime->destroy();
 
-     // delete[] data;
      delete[] data;
      delete[] anchors;
      delete[] outProbs;
