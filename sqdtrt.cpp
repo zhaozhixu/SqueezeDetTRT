@@ -261,7 +261,7 @@ createInterpretEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
 
      auto engine = builder->buildCudaEngine(*network);
      // we don't need the network any more
-     network->destroy();
+     // network->destroy();	// SIGSEGV, don't know why
 
      return engine;
 }
@@ -272,7 +272,7 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      const ICudaEngine& interpretEngine = interpretContext.getEngine();
 
      assert(convEngine.getNbBindings() == 2);
-     assert(interpretEngine.getNbBindings() == 6);
+     assert(interpretEngine.getNbBindings() == 4);
      void* convBuffers[2];
      void* interpretBuffers[4];
 
