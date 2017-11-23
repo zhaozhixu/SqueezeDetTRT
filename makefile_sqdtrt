@@ -7,8 +7,9 @@ CUDA_INSTALL_DIR = /usr/local/cuda-8.0
 CUDNN_INSTALL_DIR = /usr/local/cuda-8.0
 CUDA_LIBDIR = lib
 CUDNN_LIBDIR = lib64
-INCPATHS    =-I"$(CUDA_INSTALL_DIR)/include" -I"/usr/local/include" -I"../include" -I"../common" -I"$(CUDNN_INSTALL_DIR)/include" -I"../../include" $(TGT_INCLUDES)
-LIBPATHS    =-L"$(CUDA_INSTALL_DIR)/targets/$(TRIPLE)/$(CUDA_LIBDIR)" -L"/usr/local/lib" -L"../lib" -L"$(CUDA_INSTALL_DIR)/$(CUDA_LIBDIR)" -L"$(CUDNN_INSTALL_DIR)/$(CUDNN_LIBDIR)" -L"../../lib" $(TGT_LIBS)
+
+INCPATHS    =-I"$(CUDA_INSTALL_DIR)/include" -I "/usr/include" -I"/usr/local/include" -I"../include" -I"../common" -I"$(CUDNN_INSTALL_DIR)/include" -I"../../include" $(TGT_INCLUDES)
+LIBPATHS    =-L"$(CUDA_INSTALL_DIR)/targets/$(TRIPLE)/$(CUDA_LIBDIR)" -L "/usr/lib/i386-linux-gnu" -L"/usr/local/lib" -L"../lib" -L"$(CUDA_INSTALL_DIR)/$(CUDA_LIBDIR)" -L"$(CUDNN_INSTALL_DIR)/$(CUDNN_LIBDIR)" -L"../../lib" $(TGT_LIBS)
 
 # COMMON_LIBS = -lcudnn -lcublas -lcudart_static -lnvToolsExt -lcudart
 COMMON_LIBS = -lcudnn -lcudart -lcudart_static
@@ -25,10 +26,10 @@ COMMON_LD_FLAGS += $(LIBPATHS) -L$(OUTDIR)
 LFLAGS=$(COMMON_LD_FLAGS)
 LFLAGSD=$(COMMON_LD_FLAGS)
 
-$(TARGET): testTrt.o common.o trtUtil.o tensorUtil.o tensorCuda.o
-	$(CC) -Wall testTrt.o common.o trtUtil.o tensorUtil.o tensorCuda.o -o $(TARGET) $(CFLAGSD) $(LIBPATHS) $(LIBS)
-testTrt.o: testTrt.cpp tensorUtil.h tensorCuda.h common.h
-	$(CUCC) -c testTrt.cpp $(CFLAGSD) $(LFLAGSD) $(LIBS)
+$(TARGET): sqdtrt.o common.o trtUtil.o tensorUtil.o tensorCuda.o
+	$(CC) -Wall sqdtrt.o common.o trtUtil.o tensorUtil.o tensorCuda.o -o $(TARGET) $(CFLAGSD) $(LIBPATHS) $(LIBS)
+sqdtrt.o: sqdtrt.cu tensorUtil.h tensorCuda.h common.h
+	$(CUCC) -c sqdtrt.cu $(CFLAGSD) $(LFLAGSD) $(LIBS)
 common.o: common.cpp common.h
 	$(CUCC) -c common.cpp $(CFLAGSD) $(LFLAGSD) $(LIBS)
 trtUtil.o: trtUtil.cpp trtUtil.h

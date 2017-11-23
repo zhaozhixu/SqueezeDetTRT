@@ -1,6 +1,7 @@
 #include <time.h>
 #include <stdio.h>
 #include <thrust/sort.h>
+#include <thrust/execution_policy.h>
 #include "tensorUtil.h"
 #include "trtUtil.h"
 
@@ -198,7 +199,7 @@ void testThrustSort()
      int id[] = {1, 2, 3, 4, 5, 6, 7, 8, 9};
      float *f_device = (float *)cloneMem(f, n * sizeof(float), H2D);
      int *id_device = (int *)cloneMem(id, n * sizeof(int), H2D);
-     thrust::sort_by_key(f_device, f_device + n, id_device);
+     thrust::sort_by_key(thrust::device, f_device, f_device + n, id_device);
      float *f_host = (float *)cloneMem(f_device, n * sizeof(float), D2H);
      int *id_host = (int *)cloneMem(id_device, n * sizeof(int), D2H);
      for (int i = 0; i < n; i++) {
@@ -240,6 +241,6 @@ int main(int argc, char *argv[])
      /* testMultiplyElement(); */
      /* testTransformBboxSQD(); */
      /* testAnchor(); */
-     /* testThrustSort(); */
-     testOpencv();
+     testThrustSort();
+     /* testOpencv(); */
 }

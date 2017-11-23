@@ -17,6 +17,8 @@
 #include <cstdio>
 #include <dirent.h>
 #include <unistd.h>
+#include <thrust/sort.h>
+#include <thrust/execution_policy.h>
 
 #include "NvCaffeParser.h"
 #include "NvInferPlugin.h"
@@ -33,8 +35,6 @@ static const int INPUT_N = 1;
 static const int INPUT_C = 3;
 static const int INPUT_H = 384;
 static const int INPUT_W = 1248;
-// static const int INPUT_H_PADDED = 385; // TensorRT doesn't support asymetric padding,
-// static const int INPUT_W_PADDED = 1249; // so resize to padded size using OpenCV
 static const int CONVOUT_C = 72;
 static const int CONVOUT_H = 24;
 static const int CONVOUT_W = 78;
@@ -46,6 +46,7 @@ static const int ANCHOR_SIZE = 4;
 static const int OUTPUT_CLS_SIZE = 3;
 static const int OUTPUT_BBOX_SIZE = 4;
 static const int TOP_N_DECTION = 64;
+static const float NMS_THRESH = 0.4;
 
 const char* INPUT_NAME = "data";
 const char* CONVOUT_NAME = "conv_out";
@@ -261,7 +262,7 @@ createInterpretEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
 
      auto engine = builder->buildCudaEngine(*network);
      // we don't need the network any more
-     // network->destroy();	// SIGSEGV, don't know why
+     // network->destroy(); // SIGSEGV, don't know why
 
      return engine;
 }
@@ -319,11 +320,17 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      Tensor *bboxOutputTensor = reshapeTensor(bboxInputTensor, 3, bboxOutputDims);
 
      float *reduceMaxRes, *reduceArgRes, *mulRes, *bboxRes, *anchorsCuda;
-     CHECK(cudaMalloc(&reduceMaxRes, batchSize * anchorsNum * sizeof(float)));
-     CHECK(cudaMalloc(&reduceArgRes, batchSize * anchorsNum * sizeof(float)));
-     CHECK(cudaMalloc(&mulRes, batchSize * anchorsNum * sizeof(float)));
-     CHECK(cudaMalloc(&bboxRes, batchSize * anchorsNum * OUTPUT_BBOX_SIZE * sizeof(float)));
-     anchorsCuda = (float *)cloneMem(anchors, batchSize * anchorsNum * ANCHOR_SIZE * sizeof(float), H2D);
+     size_t reduceMaxResSize = batchSize * anchorsNum * sizeof(float);
+     size_t reduceArgResSize = batchSize * anchorsNum * sizeof(float);
+     size_t mulResSize = batchSize * anchorsNum * sizeof(float);
+     size_t bboxResSize = batchSize * anchorsNum * OUTPUT_BBOX_SIZE * sizeof(float);
+     size_t anchorsCudaSize = batchSize * anchorsNum * ANCHOR_SIZE * sizeof(float);
+     CHECK(cudaMalloc(&reduceMaxRes, reduceMaxResSize));
+     CHECK(cudaMalloc(&reduceArgRes, reduceArgResSize));
+     CHECK(cudaMalloc(&mulRes, mulResSize));
+     CHECK(cudaMalloc(&bboxRes, bboxResSize));
+     anchorsCuda = (float *)cloneMem(anchors, anchorsCudaSize, H2D);
+
      int reduceMaxResDims[] = {INPUT_N, anchorsNum, 1};
      int reduceArgResDims[] = {INPUT_N, anchorsNum, 1};
      int mulResDims[] = {INPUT_N, anchorsNum, 1};
@@ -335,15 +342,22 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      Tensor *bboxResTensor = createTensor(bboxRes, 3, bboxResDims);
      Tensor *anchorsCudaTensor = createTensor(anchorsCuda, 3, anchorsCudaDims);
 
+     int *orderDevice, *orderHost; // for top-n-detecion
+     orderHost = (int *)malloc(batchSize * anchorsNum * sizeof(int));
+     assert(orderHost);
+     for (int i = 0; i < batchSize * anchorsNum; i++)
+          orderHost[i] = i;
+     orderDevice = (int *)cloneMem(orderHost, batchSize * anchorsNum * sizeof(int), H2D);
+
      cudaStream_t stream;
      CHECK(cudaStreamCreate(&stream));
 
      // timer create, timer start
      cudaEvent_t start, stop;
-     float time;
+     float timeDetect;
      cudaEventCreate(&start);
      cudaEventCreate(&stop);
-     cudaEventRecord(start, 0 );
+     cudaEventRecord(start, 0);
 
      // DMA the input to the GPU,  execute the batch asynchronously, and DMA it back:
      CHECK(cudaMemcpyAsync(convBuffers[inputIndex], input, inputSize, cudaMemcpyHostToDevice, stream));
@@ -357,19 +371,24 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      multiplyElement(reduceMaxResTensor, confOutputTensor, mulResTensor);
      transformBboxSQD(bboxOutputTensor, anchorsCudaTensor, bboxResTensor);
 
+     cudaEventRecord(stop, 0);
+     cudaEventSynchronize(stop);
+     cudaEventElapsedTime(&timeDetect, start, stop);
+
+     // filter top-n-detection
+     // TODO: only batchSize = 1 supported
+     thrust::sort_by_key(thrust::device, mulResTensor->data, mulResTensor->data + mulResTensor->len, orderDevice);
+
      CHECK(cudaMemcpyAsync(outProbs, mulResTensor->data, mulResTensor->len * sizeof(float), cudaMemcpyDeviceToHost, stream));
      CHECK(cudaMemcpyAsync(outClass, reduceArgResTensor->data, reduceArgResTensor->len * sizeof(float), cudaMemcpyDeviceToHost, stream));
      CHECK(cudaMemcpyAsync(outBbox, bboxResTensor->data, bboxResTensor->len * sizeof(float), cudaMemcpyDeviceToHost, stream));
      cudaStreamSynchronize(stream);
 
-     // timer stop, timer destroy
-     cudaEventRecord(stop, 0);
-     cudaEventSynchronize(stop);
-     cudaEventElapsedTime(&time, start, stop);
+     // timer destroy
      cudaEventDestroy(start);
      cudaEventDestroy(stop);
 
-     printf("detect in %f ms\n", time);
+     printf("detect in %f ms\n", timeDetect);
 
      // release the stream and the buffers
      cudaStreamDestroy(stream);
@@ -440,7 +459,6 @@ float *prepareAnchors(const float *anchor_shape, int width, int height, int H, i
      assert(anchor_shape);
      float center_x[W], center_y[H];
      float *anchors = new float[H * W * B * 4];
-     int anchors_dims[] = {W, H, B, 4};
      int i, j, k;
 
      for (i = 1; i <= W; i++)
