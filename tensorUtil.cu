@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <thrust/sort.h>
+#include <thrust/execution_policy.h>
 #include "tensorCuda.h"
 #include "tensorUtil.h"
 
@@ -119,7 +121,7 @@ Tensor *createTensor(float *data, int ndim, const int *dims)
      return t;
 }
 
-void printTensor(const Tensor *tensor, const char *fmt)
+void fprintTensor(FILE *stream, const Tensor *tensor, const char *fmt)
 {
      assertTensor(tensor);
      int dim_sizes[MAXDIM], dim_levels[MAXDIM]; /* dimision size and how deep current chars go */
@@ -154,22 +156,27 @@ void printTensor(const Tensor *tensor, const char *fmt)
                }
           }
           *lp = *rp = '\0';
-          printf("%s", right_buf);
+          fprintf(stream, "%s", right_buf);
           if (*right_buf != '\0') {
-               putchar('\n');
+               fprintf(stream, "\n");
                right_len = strlen(right_buf);
                for (k = ndim-right_len; k > 0; k--)
-                    putchar(' ');
+                    fprintf(stream, " ");
           }
-          printf("%s", left_buf);
+          fprintf(stream, "%s", left_buf);
           if (*left_buf == '\0')
-               putchar(' ');
-          printf(fmt, data[i]);
+               fprintf(stream, " ");
+          fprintf(stream, fmt, data[i]);
           lp = left_buf, rp = right_buf;
      }
      for (j = 0; j < ndim; j++)
-          putchar(']');
-     putchar('\n');
+          fprintf(stream, "]");
+     fprintf(stream, "\n");
+}
+
+void printTensor(const Tensor *tensor, const char *fmt)
+{
+     fprintTensor(stdout, tensor, fmt);
 }
 
 Tensor *createSlicedTensor(const Tensor *src, int dim, int start, int len)
@@ -325,4 +332,14 @@ Tensor *transformBboxSQD(const Tensor *delta, const Tensor *anchor, Tensor *res)
 
      transformBboxSQDKernel<<<block_num, block_size>>>(delta->data, anchor->data, res->data, block_size);
      return res;
+}
+
+void tensorIndexSort(Tensor *src, int *index)
+{
+     assertTensor(src);
+     assert(index);
+
+     /* the thrust call below is not reliable, sometimes produces error here  */
+     /* TODO: replace thrust call by our own kernel */
+     thrust::sort_by_key(thrust::device, src->data, src->data + src->len, index);
 }

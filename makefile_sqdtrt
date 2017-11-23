@@ -28,8 +28,8 @@ LFLAGSD=$(COMMON_LD_FLAGS)
 
 $(TARGET): sqdtrt.o common.o trtUtil.o tensorUtil.o tensorCuda.o
 	$(CC) -Wall sqdtrt.o common.o trtUtil.o tensorUtil.o tensorCuda.o -o $(TARGET) $(CFLAGSD) $(LIBPATHS) $(LIBS)
-sqdtrt.o: sqdtrt.cu tensorUtil.h tensorCuda.h common.h
-	$(CUCC) -c sqdtrt.cu $(CFLAGSD) $(LFLAGSD) $(LIBS)
+sqdtrt.o: sqdtrt.cpp tensorUtil.h tensorCuda.h common.h
+	$(CUCC) -c sqdtrt.cpp $(CFLAGSD) $(LFLAGSD) $(LIBS)
 common.o: common.cpp common.h
 	$(CUCC) -c common.cpp $(CFLAGSD) $(LFLAGSD) $(LIBS)
 trtUtil.o: trtUtil.cpp trtUtil.h

@@ -17,6 +17,7 @@ void *cloneMem(const void *src, size_t size, CloneKind kind);
 void *repeatMem(void *data, size_t size, int times, CloneKind kind);
 int computeLength(int ndim, const int *dims);
 Tensor *createTensor(float *data, int ndim, const int *dims);
+void fprintTensor(FILE *stream, const Tensor *tensor, const char *fmt);
 void printTensor(const Tensor *tensor, const char *fmt);
 Tensor *createSlicedTensor(const Tensor *src, int dim, int start, int len);
 Tensor *sliceTensor(const Tensor *src, Tensor *dst, int dim, int start, int len);
@@ -27,5 +28,6 @@ Tensor *createReducedTensor(const Tensor *src, int dim);
 void *reduceArgMax(const Tensor *src, Tensor *dst, Tensor *arg, int dim);
 Tensor *multiplyElement(const Tensor *src1, const Tensor *src2, Tensor *dst);
 Tensor *transformBboxSQD(const Tensor *delta, const Tensor *anchor, Tensor *res);
+void tensorIndexSort(Tensor *src, int *index);
 
 #endif  /* _TENSOR_UTIL_H_ */
