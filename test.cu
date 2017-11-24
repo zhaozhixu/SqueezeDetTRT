@@ -220,6 +220,34 @@ void testThrustSort()
      printf("\n");
 }
 
+void findThrustBug()
+{
+     const int SIZE = 16848;
+     FILE *infile = fopen("sort_bug.txt", "r");
+     FILE *outfile = fopen("sorted.txt", "w");
+     float array[SIZE];
+     float *array_device;
+     int id[SIZE];
+     int *id_device;
+     int *id_host;
+
+     for (int i = 0; i < SIZE; i++) {
+          fscanf(infile, "%f", &array[i]);
+          id[i] = i;
+     }
+     cudaMalloc(&array_device, SIZE * sizeof(float));
+     cudaMemcpy(array_device, array, SIZE * sizeof(float), cudaMemcpyHostToDevice);
+     cudaMalloc(&id_device, SIZE * sizeof(int));
+     cudaMemcpy(id_device, id, SIZE * sizeof(int), cudaMemcpyHostToDevice);
+     thrust::sort_by_key(thrust::device, array_device, array_device + SIZE, id_device);
+     id_host = (int *)malloc(SIZE * sizeof(int));
+     cudaMemcpy(id_host, id_device, SIZE * sizeof(int), cudaMemcpyDeviceToHost);
+     for (int i = 0; i < SIZE; i++)
+          fprintf(outfile, "%d\n", id_host[i]);
+     fclose(infile);
+     fclose(outfile);
+}
+
 void testOpencv()
 {
      std::vector<std::string> imglist = getImageList("data/example");
@@ -241,6 +269,7 @@ int main(int argc, char *argv[])
      /* testMultiplyElement(); */
      /* testTransformBboxSQD(); */
      /* testAnchor(); */
-     testThrustSort();
+     /* testThrustSort(); */
+     findThrustBug();
      /* testOpencv(); */
 }

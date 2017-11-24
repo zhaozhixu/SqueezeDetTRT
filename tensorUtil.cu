@@ -62,6 +62,14 @@ void *cloneMem(const void *src, size_t size, CloneKind kind)
 
 }
 
+Tensor *cloneTensor(Tensor *src, CloneKind kind)
+{
+     assertTensor(src);
+     float *data = (float *)cloneMem(src->data, src->len * sizeof(float), kind);
+     Tensor *dst = createTensor(data, src->ndim, src->dims);
+     return dst;
+}
+
 void *repeatMem(void *data, size_t size, int times, CloneKind kind)
 {
      assert(data && times > 0);
@@ -339,7 +347,8 @@ void tensorIndexSort(Tensor *src, int *index)
      assertTensor(src);
      assert(index);
 
-     /* the thrust call below is not reliable, sometimes produces error here  */
+     /* the thrust call below can be unreliable, sometimes produces error here  */
+     /* now works when has compilation flag -arch=sm_35 */
      /* TODO: replace thrust call by our own kernel */
      thrust::sort_by_key(thrust::device, src->data, src->data + src->len, index);
 }

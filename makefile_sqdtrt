@@ -1,5 +1,5 @@
 CC = g++
-CUCC = nvcc -m64 -ccbin $(CC)
+CUCC = nvcc -m64 -arch=sm_35 -ccbin $(CC)
 TARGET = sqdtrt
 
 TRIPLE?=x86_64-linux

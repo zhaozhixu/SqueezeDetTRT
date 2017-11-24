@@ -311,7 +311,7 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      int classOutputDims[] = {INPUT_N, anchorsNum, OUTPUT_CLS_SIZE};
      int confOutputDims[] = {INPUT_N, anchorsNum, 1};
      int bboxOutputDims[] = {INPUT_N, anchorsNum, OUTPUT_BBOX_SIZE};
-     Tensor *convoutTensor = createTensor((float *)interpretBuffers[convoutIndex], 4, convout_dims);
+     Tensor *convoutTensor = createTensor((float *)convBuffers[convoutIndex], 4, convout_dims);
      Tensor *classInputTensor = createTensor((float *)interpretBuffers[classInputIndex], 4, classInputDims);
      Tensor *confInputTensor = createTensor((float *)interpretBuffers[confInputIndex], 4, confInputDims);
      Tensor *bboxInputTensor = createTensor(bboxInput, 4, bboxInputDims);
@@ -343,8 +343,7 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      Tensor *anchorsCudaTensor = createTensor(anchorsCuda, 3, anchorsCudaDims);
 
      int *orderDevice, *orderHost; // for top-n-detecion
-     orderHost = (int *)malloc(batchSize * anchorsNum * sizeof(int));
-     assert(orderHost);
+     assert(orderHost = (int *)malloc(batchSize * anchorsNum * sizeof(int)));
      for (int i = 0; i < batchSize * anchorsNum; i++)
           orderHost[i] = i;
      orderDevice = (int *)cloneMem(orderHost, batchSize * anchorsNum * sizeof(int), H2D);
@@ -377,7 +376,6 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
 
      // filter top-n-detection
      // TODO: only batchSize = 1 supported
-     // thrust::sort_by_key(thrust::device, mulResTensor->data, mulResTensor->data + mulResTensor->len, orderDevice);
      tensorIndexSort(mulResTensor, orderDevice);
 
      CHECK(cudaMemcpyAsync(outProbs, mulResTensor->data, mulResTensor->len * sizeof(float), cudaMemcpyDeviceToHost, stream));

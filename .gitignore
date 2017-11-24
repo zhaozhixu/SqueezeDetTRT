@@ -1,3 +1,4 @@
+!.gitignore
 *~
 *#
 *.bak
@@ -5,6 +6,7 @@
 *.out
 *.o
 *.wts
+*.txt
 testtrt
 sqdtrt
 GPATH
