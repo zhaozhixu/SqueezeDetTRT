@@ -358,6 +358,11 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      cudaEventCreate(&stop);
      cudaEventRecord(start, 0);
 
+     FILE * probs_file = fopen("probs.txt", "w");
+     FILE * conf0_file = fopen("conf0.txt", "w");
+     FILE * conf_file = fopen("conf.txt", "w");
+     FILE * class_file = fopen("class.txt", "w");
+     FILE * bbox_file = fopen("bbox.txt", "w");
      // DMA the input to the GPU,  execute the batch asynchronously, and DMA it back:
      CHECK(cudaMemcpyAsync(convBuffers[inputIndex], input, inputSize, cudaMemcpyHostToDevice, stream));
 
@@ -374,6 +379,21 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      cudaEventSynchronize(stop);
      cudaEventElapsedTime(&timeDetect, start, stop);
 
+     Tensor *probs_host = cloneTensor(classOutputTensor, D2H);
+     Tensor *conf0_host = cloneTensor(confOutputTensor, D2H);
+     Tensor *conf_host = cloneTensor(mulResTensor, D2H);
+     Tensor *class_host = cloneTensor(reduceArgResTensor, D2H);
+     Tensor *bbox_host = cloneTensor(bboxResTensor, D2H);
+     fprintTensor(probs_file, probs_host, "%f");
+     fprintTensor(conf0_file, conf0_host, "%f");
+     fprintTensor(conf_file, conf_host, "%f");
+     fprintTensor(class_file, class_host, "%f");
+     fprintTensor(bbox_file, bbox_host, "%f");
+     fclose(probs_file);
+     fclose(conf0_file);
+     fclose(conf_file);
+     fclose(class_file);
+     fclose(bbox_file);
      // filter top-n-detection
      // TODO: only batchSize = 1 supported
      tensorIndexSort(mulResTensor, orderDevice);

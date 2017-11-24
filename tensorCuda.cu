@@ -9,9 +9,11 @@ __global__ void sliceTensorKernel(float *src, float *dst, int sdim, int ddim, in
      dst[di] = src[si];
 }
 
-__global__ void reduceArgMaxKernel(float *src, float *dst, float *arg, int dim_size, int block_size)
+__global__ void reduceArgMaxKernel(float *src, float *dst, float *arg, int dim_size, int block_size, int total)
 {
      int di = blockIdx.x * block_size + threadIdx.x;
+     if (di >= total)
+          return;
      int si = di * dim_size;
      float now = src[si], max = now;
      int maxi = 0;
@@ -26,15 +28,19 @@ __global__ void reduceArgMaxKernel(float *src, float *dst, float *arg, int dim_s
      arg[di] = maxi;
 }
 
-__global__ void multiplyElementKernel(float *src1, float *src2, float *dst, int block_size)
+__global__ void multiplyElementKernel(float *src1, float *src2, float *dst, int block_size, int total)
 {
      int di = blockIdx.x * block_size + threadIdx.x;
+     if (di >= total)
+          return;
      dst[di] = src1[di] * src2[di];
 }
 
-__global__ void transformBboxSQDKernel(float *delta, float *anchor, float *res, int block_size)
+__global__ void transformBboxSQDKernel(float *delta, float *anchor, float *res, int block_size, int total)
 {
      int di = (blockIdx.x * block_size + threadIdx.x) * 4;
+     if (di >= total)
+          return;
      float d[4] = {delta[di], delta[di+1], delta[di+2], delta[di+3]};
      float a[4] = {anchor[di], anchor[di+1], anchor[di+2], anchor[di+3]};
      float cx = a[0] + d[0] * a[2];

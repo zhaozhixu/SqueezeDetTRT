@@ -307,7 +307,7 @@ void *reduceArgMax(const Tensor *src, Tensor *dst, Tensor *arg, int dim)
      block_size = MAX_THREADS_PER_BLOCK;
      block_num = thread_num / block_size + 1;
 
-     reduceArgMaxKernel<<<block_num, block_size>>>(src->data, dst->data, arg->data, src->dims[dim], block_size);
+     reduceArgMaxKernel<<<block_num, block_size>>>(src->data, dst->data, arg->data, src->dims[dim], block_size, dst->len);
      return dst;
 }
 
@@ -321,7 +321,7 @@ Tensor *multiplyElement(const Tensor *src1, const Tensor *src2, Tensor *dst)
      block_size = MAX_THREADS_PER_BLOCK;
      block_num = thread_num / block_size + 1;
 
-     multiplyElementKernel<<<block_num, block_size>>>(src1->data, src2->data, dst->data, block_size);
+     multiplyElementKernel<<<block_num, block_size>>>(src1->data, src2->data, dst->data, block_size, dst->len);
      return dst;
 }
 
@@ -338,7 +338,7 @@ Tensor *transformBboxSQD(const Tensor *delta, const Tensor *anchor, Tensor *res)
      block_size = MAX_THREADS_PER_BLOCK;
      block_num = thread_num / block_size + 1;
 
-     transformBboxSQDKernel<<<block_num, block_size>>>(delta->data, anchor->data, res->data, block_size);
+     transformBboxSQDKernel<<<block_num, block_size>>>(delta->data, anchor->data, res->data, block_size, res->len);
      return res;
 }
 
