@@ -347,8 +347,8 @@ void tensorIndexSort(Tensor *src, int *index)
      assertTensor(src);
      assert(index);
 
-     /* the thrust call below can be unreliable, sometimes produces error here  */
-     /* now works when has compilation flag -arch=sm_35 */
+     /* the thrust call below can be unreliable, sometimes produces error */
+     /* now it works with compilation flag -arch=sm_35 */
      /* TODO: replace thrust call by our own kernel */
      thrust::sort_by_key(thrust::device, src->data, src->data + src->len, index);
 }
