@@ -30,8 +30,8 @@ Tensor *createReducedTensor(const Tensor *src, int dim);
 void *reduceArgMax(const Tensor *src, Tensor *dst, Tensor *arg, int dim);
 Tensor *multiplyElement(const Tensor *src1, const Tensor *src2, Tensor *dst);
 Tensor *transformBboxSQD(const Tensor *delta, const Tensor *anchor, Tensor *res, float img_width, float img_height);
-void tensorIndexSort(Tensor *src, int *index);
-void pickElements(float *src, float *dst, int stride, int *index, int len);
+void tensorIndexSort(Tensor *src, int *idx);
+void pickElements(float *src, float *dst, int stride, int *idx, int len);
 float computeIou(float *bbox0, float *bbox1);
 
 #endif  /* _TENSOR_UTIL_H_ */

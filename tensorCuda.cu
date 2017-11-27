@@ -56,12 +56,12 @@ __global__ void transformBboxSQDKernel(float *delta, float *anchor, float *res, 
      res[di+3] = max(min(cy + h * 0.5, img_height - 1), 0);
 }
 
-__global__ void pickElementsKernel(float *src, float *dst, int *index, int len, int stride, int block_size)
+__global__ void pickElementsKernel(float *src, float *dst, int *idx, int len, int stride, int block_size)
 {
      int di = blockIdx.x * block_size + threadIdx.x;
      if (di >= len)
           return;
-     int si = index[di];
+     int si = idx[di];
      for (int i = 0; i < stride; i++)
           dst[di*stride+i] = src[si*stride+i];
 }

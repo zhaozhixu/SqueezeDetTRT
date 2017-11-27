@@ -353,27 +353,27 @@ Tensor *transformBboxSQD(const Tensor *delta, const Tensor *anchor, Tensor *res,
      return res;
 }
 
-void tensorIndexSort(Tensor *src, int *index)
+void tensorIndexSort(Tensor *src, int *idx)
 {
      assertTensor(src);
-     assert(index);
+     assert(idx);
 
      /* the thrust call below can be unreliable, sometimes produces error */
      /* now it works with compilation flag -arch=sm_35 */
      /* TODO: replace thrust call by our own kernel */
-     thrust::sort_by_key(thrust::device, src->data, src->data + src->len, index);
+     thrust::sort_by_key(thrust::device, src->data, src->data + src->len, idx);
 }
 
-void pickElements(float *src, float *dst, int stride, int *index, int len)
+void pickElements(float *src, float *dst, int stride, int *idx, int len)
 {
-     assert(src && dst && index);
+     assert(src && dst && idx);
 
      int thread_num, block_size, block_num;
      thread_num = len;
      block_size = MAX_THREADS_PER_BLOCK;
      block_num = thread_num / block_size + 1;
 
-     pickElementsKernel<<<block_num, block_size>>>(src, dst, index, len, stride, block_size);
+     pickElementsKernel<<<block_num, block_size>>>(src, dst, idx, len, stride, block_size);
 }
 
 /* compute the iou of two bboxes whose elements are {top_left_x, top_left_y, bottom_right_x, bottom_right_y} */

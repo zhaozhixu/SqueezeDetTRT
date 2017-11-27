@@ -405,7 +405,7 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      // fclose(bbox_file);
      // filter top-n-detection
      // TODO: only batchSize = 1 supported
-     // tensorIndexSort(mulResTensor, orderDevice);
+     tensorIndexSort(mulResTensor, orderDevice);
 
      CHECK(cudaMemcpyAsync(outProbs, mulResTensor->data, mulResTensor->len * sizeof(float), cudaMemcpyDeviceToHost, stream));
      CHECK(cudaMemcpyAsync(outClass, reduceArgResTensor->data, reduceArgResTensor->len * sizeof(float), cudaMemcpyDeviceToHost, stream));

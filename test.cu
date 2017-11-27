@@ -276,11 +276,12 @@ void testPickElements()
                        16.0, 17.0};
      int index[] = {9, 15, 2, 17, 11};
      int len = 5;
+     int *index_device = (int *)cloneMem(index, len * sizeof(int), H2D); /* remember this! */
      float *src_device = (float *)cloneMem(src_host, 18 * sizeof(float), H2D);
      float *dst_device;
      cudaMalloc(&dst_device, len * sizeof(float));
 
-     pickElements(src_device, dst_device, 1, index, len);
+     pickElements(src_device, dst_device, 1, index_device, len);
 
      float *dst_host = (float *)cloneMem(dst_device, len * sizeof(float), D2H);
      for (int i = 0; i < 18; i++)
