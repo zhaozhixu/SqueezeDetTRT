@@ -35,31 +35,40 @@ static const int INPUT_N = 1;
 static const int INPUT_C = 3;
 static const int INPUT_H = 384;
 static const int INPUT_W = 1248;
+
 static const int CONVOUT_C = 72;
 static const int CONVOUT_H = 24;
 static const int CONVOUT_W = 78;
+
 static const int CLASS_SLICE_C = 27;
 static const int CONF_SLICE_C = 9;
 static const int BBOX_SLICE_C = 36;
-static const int ANCHORS_PER_GRID = 9;
-static const int ANCHOR_SIZE = 4;
+
 static const int OUTPUT_CLS_SIZE = 3;
 static const int OUTPUT_BBOX_SIZE = 4;
+
 static const int TOP_N_DECTION = 64;
 static const float NMS_THRESH = 0.4;
+// static const float PROB_THRESH = 0.005;
+static const float PROB_THRESH = 0.9;
+// static const float EPSILON = 1e-16;
 
-const char* INPUT_NAME = "data";
-const char* CONVOUT_NAME = "conv_out";
-const char* CLASS_INPUT_NAME = "class_slice";
-const char* CONF_INPUT_NAME = "confidence_slice";
-const char* BBOX_INPUT_NAME = "bbox_slice";
-const char* CLASS_OUTPUT_NAME = "pred_class_probs";
-const char* CONF_OUTPUT_NAME = "pred_confidence_score";
-const char* BBOX_OUTPUT_NAME = "bbox_delta";
+static const char* INPUT_NAME = "data";
+static const char* CONVOUT_NAME = "conv_out";
+static const char* CLASS_INPUT_NAME = "class_slice";
+static const char* CONF_INPUT_NAME = "confidence_slice";
+static const char* BBOX_INPUT_NAME = "bbox_slice";
+static const char* CLASS_OUTPUT_NAME = "pred_class_probs";
+static const char* CONF_OUTPUT_NAME = "pred_confidence_score";
+static const char* BBOX_OUTPUT_NAME = "bbox_delta";
 
-const float ANCHOR_SHAPE[] = {36, 37, 366, 174, 115, 59, /* w x h, 2 elements one group*/
+static const int ANCHORS_PER_GRID = 9;
+static const int ANCHOR_SIZE = 4;
+static const float ANCHOR_SHAPE[] = {36, 37, 366, 174, 115, 59, /* w x h, 2 elements one group*/
                               162, 87, 38, 90, 258, 173,
                               224, 108, 78, 170, 72, 43};
+
+static const char *CLASS_NAMES[] = {"car", "pedestrian", "cyclist"};
 
 std::string locateFile(const std::string& input)
 {
@@ -358,11 +367,11 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      cudaEventCreate(&stop);
      cudaEventRecord(start, 0);
 
-     FILE * probs_file = fopen("probs.txt", "w");
-     FILE * conf0_file = fopen("conf0.txt", "w");
-     FILE * conf_file = fopen("conf.txt", "w");
-     FILE * class_file = fopen("class.txt", "w");
-     FILE * bbox_file = fopen("bbox.txt", "w");
+     // FILE * probs_file = fopen("probs.txt", "w");
+     // FILE * conf0_file = fopen("conf0.txt", "w");
+     // FILE * conf_file = fopen("conf.txt", "w");
+     // FILE * class_file = fopen("class.txt", "w");
+     // FILE * bbox_file = fopen("bbox.txt", "w");
      // DMA the input to the GPU,  execute the batch asynchronously, and DMA it back:
      CHECK(cudaMemcpyAsync(convBuffers[inputIndex], input, inputSize, cudaMemcpyHostToDevice, stream));
 
@@ -373,30 +382,30 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      interpretContext.enqueue(batchSize, interpretBuffers, stream, nullptr);
      reduceArgMax(classOutputTensor, reduceMaxResTensor, reduceArgResTensor, 2);
      multiplyElement(reduceMaxResTensor, confOutputTensor, mulResTensor);
-     transformBboxSQD(bboxOutputTensor, anchorsCudaTensor, bboxResTensor);
+     transformBboxSQD(bboxOutputTensor, anchorsCudaTensor, bboxResTensor, INPUT_W, INPUT_H);
 
      cudaEventRecord(stop, 0);
      cudaEventSynchronize(stop);
      cudaEventElapsedTime(&timeDetect, start, stop);
 
-     Tensor *probs_host = cloneTensor(classOutputTensor, D2H);
-     Tensor *conf0_host = cloneTensor(confOutputTensor, D2H);
-     Tensor *conf_host = cloneTensor(mulResTensor, D2H);
-     Tensor *class_host = cloneTensor(reduceArgResTensor, D2H);
-     Tensor *bbox_host = cloneTensor(bboxResTensor, D2H);
-     fprintTensor(probs_file, probs_host, "%f");
-     fprintTensor(conf0_file, conf0_host, "%f");
-     fprintTensor(conf_file, conf_host, "%f");
-     fprintTensor(class_file, class_host, "%f");
-     fprintTensor(bbox_file, bbox_host, "%f");
-     fclose(probs_file);
-     fclose(conf0_file);
-     fclose(conf_file);
-     fclose(class_file);
-     fclose(bbox_file);
+     // Tensor *probs_host = cloneTensor(classOutputTensor, D2H);
+     // Tensor *conf0_host = cloneTensor(confOutputTensor, D2H);
+     // Tensor *conf_host = cloneTensor(mulResTensor, D2H);
+     // Tensor *class_host = cloneTensor(reduceArgResTensor, D2H);
+     // Tensor *bbox_host = cloneTensor(bboxResTensor, D2H);
+     // fprintTensor(probs_file, probs_host, "%f");
+     // fprintTensor(conf0_file, conf0_host, "%f");
+     // fprintTensor(conf_file, conf_host, "%f");
+     // fprintTensor(class_file, class_host, "%f");
+     // fprintTensor(bbox_file, bbox_host, "%f");
+     // fclose(probs_file);
+     // fclose(conf0_file);
+     // fclose(conf_file);
+     // fclose(class_file);
+     // fclose(bbox_file);
      // filter top-n-detection
      // TODO: only batchSize = 1 supported
-     tensorIndexSort(mulResTensor, orderDevice);
+     // tensorIndexSort(mulResTensor, orderDevice);
 
      CHECK(cudaMemcpyAsync(outProbs, mulResTensor->data, mulResTensor->len * sizeof(float), cudaMemcpyDeviceToHost, stream));
      CHECK(cudaMemcpyAsync(outClass, reduceArgResTensor->data, reduceArgResTensor->len * sizeof(float), cudaMemcpyDeviceToHost, stream));
@@ -501,6 +510,42 @@ float *prepareAnchors(const float *anchor_shape, int width, int height, int H, i
      return anchors;
 }
 
+void detectionFilter(float *bboxes, float *classes, float *probs, int *keep, int num_probs, float nms_thresh, float prob_thresh)
+{
+     assert(bboxes && classes && probs && keep);
+
+     int i, j;
+     for (i = 0; i < num_probs; i++) {
+          keep[i] = 1;
+          if (probs[i] < prob_thresh) {
+               keep[i] = 0;
+               continue;
+          }
+          for (j = i - 1; j >= 0 ; j--) {
+               if (!keep[j] || classes[i] != classes[j])
+                    continue;
+               if (computeIou(&bboxes[i*OUTPUT_BBOX_SIZE],&bboxes[j*OUTPUT_BBOX_SIZE]) > nms_thresh)
+                    keep[j] = 0;
+          }
+
+     }
+}
+
+void fprintResult(FILE *fp, float *bboxes, float *classes, float *probs, int *keep, int num_probs)
+{
+     assert(fp && bboxes && classes && probs && keep);
+
+     int i;
+     float *bbox;
+     for (i = 0; i < num_probs; i++) {
+          if (!keep[i])
+               continue;
+          bbox = &bboxes[i * OUTPUT_BBOX_SIZE];
+          fprintf(fp, "%s -1 -1 0.0 %.2f %.2f %.2f %.2f 0.0 0.0 0.0 0.0 0.0 0.0 0.0 %.3f\n",
+                  CLASS_NAMES[(int)classes[i]], bbox[0], bbox[1], bbox[2], bbox[3], probs[i]);
+     }
+}
+
 int main(int argc, char** argv)
 {
      if (argc < 2) {
@@ -515,10 +560,11 @@ int main(int argc, char** argv)
      // float *outProbs = new float[INPUT_N * TOP_N_DECTION];
      // float *outClass = new float[INPUT_N * TOP_N_DECTION];
      // float *outBbox = new float[INPUT_N * TOP_N_DECTION * OUTPUT_BBOX_SIZE];
-     int anchorsNum = CONVOUT_H * CONVOUT_W * ANCHORS_PER_GRID;
-     float *outProbs = new float[INPUT_N * anchorsNum];
-     float *outClass = new float[INPUT_N * anchorsNum];
-     float *outBbox = new float[INPUT_N * anchorsNum * OUTPUT_BBOX_SIZE];
+     int probsNum = INPUT_N * CONVOUT_H * CONVOUT_W * ANCHORS_PER_GRID;
+     float *outProbs = new float[probsNum];
+     float *outClass = new float[probsNum];
+     float *outBbox = new float[probsNum * OUTPUT_BBOX_SIZE];
+     int *keep = new int[probsNum];
 
      // create engines
      IHostMemory *convModelStream{ nullptr };
@@ -534,6 +580,8 @@ int main(int argc, char** argv)
 
      // run inference
      doInference(*convContext, *interpretContext, data, anchors, outProbs, outClass, outBbox, INPUT_N);
+     detectionFilter(outBbox, outClass, outProbs, keep, probsNum, NMS_THRESH, PROB_THRESH);
+     fprintResult(stdout, outBbox, outClass, outProbs, keep, probsNum);
 
      // destroy the engine
      convContext->destroy();
@@ -547,5 +595,6 @@ int main(int argc, char** argv)
      delete[] outProbs;
      delete[] outClass;
      delete[] outBbox;
+     delete[] keep;
      return 0;
 }

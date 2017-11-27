@@ -137,7 +137,7 @@ void testTransformBboxSQD()
      printf("anchor_host:\n");
      printTensor(anchor_host, "%.6f");
      start =clock();
-     transformBboxSQD(delta_cuda, anchor_cuda, res_cuda);
+     transformBboxSQD(delta_cuda, anchor_cuda, res_cuda, 1248, 384);
      end = clock();
      printf("transformBboxSQD in %ld\n", end - start);
      float *res_host_data = (float *)cloneMem(res_cuda_data, sizeof(float) * 24, D2H);
@@ -260,6 +260,37 @@ void testOpencv()
      cv::resize(img, img, cv::Size(1248, 384));
 }
 
+void testIou()
+{
+     float bbox0[] = {0, 0, 0, 0};
+     float bbox1[] = {0, 0, 0, 0};
+     printf("%f\n", computeIou(bbox0, bbox1));
+}
+
+void testPickElements()
+{
+     float src_host[] = {0.0, 1.0, 2.0, 3.0,
+                       4.0, 5.0, 6.0, 7.0,
+                       8.0, 9.0, 10.0, 11.0,
+                       12.0, 13.0, 14.0, 15.0,
+                       16.0, 17.0};
+     int index[] = {9, 15, 2, 17, 11};
+     int len = 5;
+     float *src_device = (float *)cloneMem(src_host, 18 * sizeof(float), H2D);
+     float *dst_device;
+     cudaMalloc(&dst_device, len * sizeof(float));
+
+     pickElements(src_device, dst_device, 1, index, len);
+
+     float *dst_host = (float *)cloneMem(dst_device, len * sizeof(float), D2H);
+     for (int i = 0; i < 18; i++)
+          printf("%.2f ", src_host[i]);
+     printf("\n");
+     for (int i = 0; i < len; i++)
+          printf("%.2f ", dst_host[i]);
+     printf("\n");
+}
+
 int main(int argc, char *argv[])
 {
      /* init(); */
@@ -270,6 +301,8 @@ int main(int argc, char *argv[])
      /* testTransformBboxSQD(); */
      /* testAnchor(); */
      /* testThrustSort(); */
-     findThrustBug();
+     /* findThrustBug(); */
      /* testOpencv(); */
+     /* testIou(); */
+     testPickElements();
 }

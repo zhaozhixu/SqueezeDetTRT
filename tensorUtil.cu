@@ -8,12 +8,23 @@
 #include "tensorUtil.h"
 
 #define MAXDIM 8
+#define max(a, b) ((a) > (b) ? (a) : (b))
+#define min(a, b) ((a) < (b) ? (a) : (b))
+
+static float EPSILON = 1e-16;
 
 static void assertTensor(const Tensor *tensor)
 {
      assert(tensor && tensor->data);
      assert(tensor->ndim < MAXDIM && tensor->ndim > 0);
      assert(tensor->len == computeLength(tensor->ndim, tensor->dims));
+}
+
+int isTensorValid(Tensor *tensor)
+{
+     return (tensor && tensor->data &&
+             tensor->ndim < MAXDIM && tensor->ndim > 0 &&
+             tensor->len == computeLength(tensor->ndim, tensor->dims));
 }
 
 int isShapeEqual(const Tensor *t1, const Tensor *t2)
@@ -326,7 +337,7 @@ Tensor *multiplyElement(const Tensor *src1, const Tensor *src2, Tensor *dst)
 }
 
 /* transform from bbox delta to bbox coordinates, using hyper param EXP_THRESH = 1.0 */
-Tensor *transformBboxSQD(const Tensor *delta, const Tensor *anchor, Tensor *res)
+Tensor *transformBboxSQD(const Tensor *delta, const Tensor *anchor, Tensor *res, float img_width, float img_height)
 {
      assert(isShapeEqual(delta, anchor));
      assert(isShapeEqual(delta, res));
@@ -338,7 +349,7 @@ Tensor *transformBboxSQD(const Tensor *delta, const Tensor *anchor, Tensor *res)
      block_size = MAX_THREADS_PER_BLOCK;
      block_num = thread_num / block_size + 1;
 
-     transformBboxSQDKernel<<<block_num, block_size>>>(delta->data, anchor->data, res->data, block_size, res->len);
+     transformBboxSQDKernel<<<block_num, block_size>>>(delta->data, anchor->data, res->data, img_width, img_height, block_size, res->len);
      return res;
 }
 
@@ -351,4 +362,36 @@ void tensorIndexSort(Tensor *src, int *index)
      /* now it works with compilation flag -arch=sm_35 */
      /* TODO: replace thrust call by our own kernel */
      thrust::sort_by_key(thrust::device, src->data, src->data + src->len, index);
+}
+
+void pickElements(float *src, float *dst, int stride, int *index, int len)
+{
+     assert(src && dst && index);
+
+     int thread_num, block_size, block_num;
+     thread_num = len;
+     block_size = MAX_THREADS_PER_BLOCK;
+     block_num = thread_num / block_size + 1;
+
+     pickElementsKernel<<<block_num, block_size>>>(src, dst, index, len, stride, block_size);
+}
+
+/* compute the iou of two bboxes whose elements are {top_left_x, top_left_y, bottom_right_x, bottom_right_y} */
+float computeIou(float *bbox0, float *bbox1)
+{
+     assert(bbox0 && bbox1);
+
+     float lr, tb;              /* left-right, top-bottom */
+     float intersection, total;
+     lr = min(bbox0[2], bbox1[2]) - max(bbox0[0], bbox1[0]);
+     if (lr >= 0) {
+          tb = min(bbox0[3], bbox1[3]) - max(bbox0[1], bbox1[1]);
+          if (tb >= 0) {
+               intersection = tb * lr + EPSILON;
+               total = (bbox0[2] - bbox0[0]) * (bbox0[3] - bbox0[1]) +
+                    (bbox1[2] - bbox1[0]) * (bbox1[3] - bbox1[1]) - intersection;
+               return intersection / (total + EPSILON);
+          }
+     }
+     return 0;
 }

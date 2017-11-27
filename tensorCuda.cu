@@ -1,5 +1,8 @@
 #include <cuda_runtime.h>
 
+#define max(a, b) ((a) > (b) ? (a) : (b))
+#define min(a, b) ((a) < (b) ? (a) : (b))
+
 static __device__ float E = 2.718281828;
 
 __global__ void sliceTensorKernel(float *src, float *dst, int sdim, int ddim, int start, int block_size)
@@ -36,7 +39,7 @@ __global__ void multiplyElementKernel(float *src1, float *src2, float *dst, int 
      dst[di] = src1[di] * src2[di];
 }
 
-__global__ void transformBboxSQDKernel(float *delta, float *anchor, float *res, int block_size, int total)
+__global__ void transformBboxSQDKernel(float *delta, float *anchor, float *res, float img_width, float img_height, int block_size, int total)
 {
      int di = (blockIdx.x * block_size + threadIdx.x) * 4;
      if (di >= total)
@@ -47,8 +50,18 @@ __global__ void transformBboxSQDKernel(float *delta, float *anchor, float *res, 
      float cy = a[1] + d[1] * a[3];
      float w = a[2] * (d[2] < 1 ? expf(d[2]) : d[2] * E);
      float h = a[3] * (d[3] < 1 ? expf(d[3]) : d[3] * E);
-     res[di] = cx - w * 0.5;
-     res[di+1] = cy - h * 0.5;
-     res[di+2] = cx + w * 0.5;
-     res[di+3] = cy + h * 0.5;
+     res[di] = min(max(cx - w * 0.5, 0), img_width - 1);
+     res[di+1] = min(max(cy - h * 0.5, 0), img_height - 1);
+     res[di+2] = max(min(cx + w * 0.5, img_width - 1), 0);
+     res[di+3] = max(min(cy + h * 0.5, img_height - 1), 0);
+}
+
+__global__ void pickElementsKernel(float *src, float *dst, int *index, int len, int stride, int block_size)
+{
+     int di = blockIdx.x * block_size + threadIdx.x;
+     if (di >= len)
+          return;
+     int si = index[di];
+     for (int i = 0; i < stride; i++)
+          dst[di*stride+i] = src[si*stride+i];
 }
