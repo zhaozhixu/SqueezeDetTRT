@@ -47,10 +47,10 @@ static const int BBOX_SLICE_C = 36;
 static const int OUTPUT_CLS_SIZE = 3;
 static const int OUTPUT_BBOX_SIZE = 4;
 
-static const int TOP_N_DECTION = 64;
+static const int TOP_N_DETECTION = 64;
 static const float NMS_THRESH = 0.4;
 // static const float PROB_THRESH = 0.005;
-static const float PROB_THRESH = 0.9;
+static const float PROB_THRESH = 0.3;
 // static const float EPSILON = 1e-16;
 
 static const char* INPUT_NAME = "data";
@@ -356,6 +356,13 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      for (int i = 0; i < batchSize * anchorsNum; i++)
           orderHost[i] = i;
      orderDevice = (int *)cloneMem(orderHost, batchSize * anchorsNum * sizeof(int), H2D);
+     float  *finalClass, *finalProbs, *finalBbox;
+     size_t finalClassSize = batchSize * TOP_N_DETECTION * sizeof(float);
+     size_t finalProbsSize = batchSize * TOP_N_DETECTION * sizeof(float);
+     size_t finalBboxSize = batchSize * TOP_N_DETECTION * OUTPUT_BBOX_SIZE * sizeof(float);
+     CHECK(cudaMalloc(&finalClass, finalClassSize));
+     CHECK(cudaMalloc(&finalProbs, finalProbsSize));
+     CHECK(cudaMalloc(&finalBbox, finalBboxSize));
 
      cudaStream_t stream;
      CHECK(cudaStreamCreate(&stream));
@@ -367,11 +374,6 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      cudaEventCreate(&stop);
      cudaEventRecord(start, 0);
 
-     // FILE * probs_file = fopen("probs.txt", "w");
-     // FILE * conf0_file = fopen("conf0.txt", "w");
-     // FILE * conf_file = fopen("conf.txt", "w");
-     // FILE * class_file = fopen("class.txt", "w");
-     // FILE * bbox_file = fopen("bbox.txt", "w");
      // DMA the input to the GPU,  execute the batch asynchronously, and DMA it back:
      CHECK(cudaMemcpyAsync(convBuffers[inputIndex], input, inputSize, cudaMemcpyHostToDevice, stream));
 
@@ -388,6 +390,11 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      cudaEventSynchronize(stop);
      cudaEventElapsedTime(&timeDetect, start, stop);
 
+     // FILE * probs_file = fopen("probs.txt", "w");
+     // FILE * conf0_file = fopen("conf0.txt", "w");
+     // FILE * conf_file = fopen("conf.txt", "w");
+     // FILE * class_file = fopen("class.txt", "w");
+     // FILE * bbox_file = fopen("bbox.txt", "w");
      // Tensor *probs_host = cloneTensor(classOutputTensor, D2H);
      // Tensor *conf0_host = cloneTensor(confOutputTensor, D2H);
      // Tensor *conf_host = cloneTensor(mulResTensor, D2H);
@@ -405,11 +412,44 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      // fclose(bbox_file);
      // filter top-n-detection
      // TODO: only batchSize = 1 supported
-     tensorIndexSort(mulResTensor, orderDevice);
+     Tensor *mulResTensorCopy = cloneTensor(mulResTensor, D2D);
+     tensorIndexSort(mulResTensorCopy, orderDevice);
+     pickElements(mulResTensor->data, finalProbs, 1, orderDevice, TOP_N_DETECTION);
+     pickElements(reduceArgResTensor->data, finalClass, 1, orderDevice, TOP_N_DETECTION);
+     pickElements(bboxResTensor->data, finalBbox, OUTPUT_BBOX_SIZE, orderDevice, TOP_N_DETECTION);
 
-     CHECK(cudaMemcpyAsync(outProbs, mulResTensor->data, mulResTensor->len * sizeof(float), cudaMemcpyDeviceToHost, stream));
-     CHECK(cudaMemcpyAsync(outClass, reduceArgResTensor->data, reduceArgResTensor->len * sizeof(float), cudaMemcpyDeviceToHost, stream));
-     CHECK(cudaMemcpyAsync(outBbox, bboxResTensor->data, bboxResTensor->len * sizeof(float), cudaMemcpyDeviceToHost, stream));
+     // FILE * sort_file = fopen("sort.txt", "w");
+     // int *orderHost2 = (int *)cloneMem(orderDevice, anchorsNum * sizeof(int), D2H);
+     // for (int i = 0; i < anchorsNum; i++)
+     //      fprintf(sort_file, "%d\n", orderHost2[i]);
+     // fclose(sort_file);
+     // FILE * finalProbs_file = fopen("finalProbs.txt", "w");
+     // float *finalProbs_host = (float *)cloneMem(finalProbs, TOP_N_DETECTION * sizeof(float), D2H);
+     // for (int i = 0; i < TOP_N_DETECTION; i++)
+     //      fprintf(finalProbs_file, "%f\n", finalProbs_host[i]);
+     // fclose(finalProbs_file);
+
+     // Tensor *mulResHost = cloneTensor(mulResTensor, D2H);
+     // float *finalProbs2 = (float *)malloc(TOP_N_DETECTION * sizeof(float));
+     // pickElements(mulResHost->data, finalProbs2, 1, orderHost2, TOP_N_DETECTION);
+     // int len = TOP_N_DETECTION, stride = 1;
+     // for (int i = 0; i < len; i++) {
+     //      for (int j = 0; j < stride; j++) {
+     //           fprintf(stderr, "i: %d j: %d idx[i]: %d src[idx[i]]: %.2f",
+     //                   i, j, orderHost2[i], mulResHost->data[orderHost2[i]]);
+     //           fprintf(stderr, "\n");
+     //           finalProbs2[i*stride+j] = mulResHost->data[orderHost2[i]*stride+j];
+     //      }
+     // }
+     // FILE * finalProbs2_file = fopen("finalProbs2.txt", "w");
+     // for (int i = 0; i < TOP_N_DETECTION; i++)
+     //      fprintf(finalProbs2_file, "%f\n", finalProbs2[i]);
+     // fclose(finalProbs2_file);
+     // exit(1);
+
+     CHECK(cudaMemcpyAsync(outProbs, finalProbs, finalProbsSize, cudaMemcpyDeviceToHost, stream));
+     CHECK(cudaMemcpyAsync(outClass, finalClass, finalClassSize, cudaMemcpyDeviceToHost, stream));
+     CHECK(cudaMemcpyAsync(outBbox, finalBbox, finalBboxSize, cudaMemcpyDeviceToHost, stream));
      cudaStreamSynchronize(stream);
 
      // timer destroy
@@ -515,13 +555,16 @@ void detectionFilter(float *bboxes, float *classes, float *probs, int *keep, int
      assert(bboxes && classes && probs && keep);
 
      int i, j;
+     // for (i = 0; i < num_probs; i++)
+     //      keep[i] = 1;
      for (i = 0; i < num_probs; i++) {
           keep[i] = 1;
-          if (probs[i] < prob_thresh) {
-               keep[i] = 0;
-               continue;
-          }
+          // if (probs[i] < prob_thresh) {
+          //      keep[i] = 0;
+          //      continue;
+          // }
           for (j = i - 1; j >= 0 ; j--) {
+          // for (j = i; j < num_probs; j++) {
                if (!keep[j] || classes[i] != classes[j])
                     continue;
                if (computeIou(&bboxes[i*OUTPUT_BBOX_SIZE],&bboxes[j*OUTPUT_BBOX_SIZE]) > nms_thresh)
@@ -557,14 +600,15 @@ int main(int argc, char** argv)
      printf("image num: %ld\n", imageList.size());
      float *data = prepareData(imageList);
      float *anchors = prepareAnchors(ANCHOR_SHAPE, INPUT_W, INPUT_H, CONVOUT_H, CONVOUT_W, ANCHORS_PER_GRID);
-     // float *outProbs = new float[INPUT_N * TOP_N_DECTION];
-     // float *outClass = new float[INPUT_N * TOP_N_DECTION];
-     // float *outBbox = new float[INPUT_N * TOP_N_DECTION * OUTPUT_BBOX_SIZE];
-     int probsNum = INPUT_N * CONVOUT_H * CONVOUT_W * ANCHORS_PER_GRID;
-     float *outProbs = new float[probsNum];
-     float *outClass = new float[probsNum];
-     float *outBbox = new float[probsNum * OUTPUT_BBOX_SIZE];
-     int *keep = new int[probsNum];
+     float *outProbs = new float[INPUT_N * TOP_N_DETECTION];
+     float *outClass = new float[INPUT_N * TOP_N_DETECTION];
+     float *outBbox = new float[INPUT_N * TOP_N_DETECTION * OUTPUT_BBOX_SIZE];
+     int *keep = new int[INPUT_N * TOP_N_DETECTION];
+     // int probsNum = INPUT_N * CONVOUT_H * CONVOUT_W * ANCHORS_PER_GRID;
+     // float *outProbs = new float[probsNum];
+     // float *outClass = new float[probsNum];
+     // float *outBbox = new float[probsNum * OUTPUT_BBOX_SIZE];
+     // int *keep = new int[probsNum];
 
      // create engines
      IHostMemory *convModelStream{ nullptr };
@@ -580,8 +624,8 @@ int main(int argc, char** argv)
 
      // run inference
      doInference(*convContext, *interpretContext, data, anchors, outProbs, outClass, outBbox, INPUT_N);
-     detectionFilter(outBbox, outClass, outProbs, keep, probsNum, NMS_THRESH, PROB_THRESH);
-     fprintResult(stdout, outBbox, outClass, outProbs, keep, probsNum);
+     detectionFilter(outBbox, outClass, outProbs, keep, TOP_N_DETECTION, NMS_THRESH, PROB_THRESH);
+     fprintResult(stdout, outBbox, outClass, outProbs, keep, TOP_N_DETECTION);
 
      // destroy the engine
      convContext->destroy();

@@ -361,7 +361,7 @@ void tensorIndexSort(Tensor *src, int *idx)
      /* the thrust call below can be unreliable, sometimes produces error */
      /* now it works with compilation flag -arch=sm_35 */
      /* TODO: replace thrust call by our own kernel */
-     thrust::sort_by_key(thrust::device, src->data, src->data + src->len, idx);
+     thrust::sort_by_key(thrust::device, src->data, src->data + src->len, idx, thrust::greater<float>());
 }
 
 void pickElements(float *src, float *dst, int stride, int *idx, int len)
@@ -375,6 +375,20 @@ void pickElements(float *src, float *dst, int stride, int *idx, int len)
 
      pickElementsKernel<<<block_num, block_size>>>(src, dst, idx, len, stride, block_size);
 }
+
+/* void pickElements(float* src,float* dst,int stride,int* idx,int len) */
+/* { */
+/*      assert(src && dst && idx); */
+
+/*      for (int i = 0; i < len; i++) { */
+/*           for (int j = 0; j < stride; j++) { */
+/*                fprintf(stderr, "i: %d j: %d idx[i]: %d src[idx[i]]: %.2f", */
+/*                        i, j, idx[i], src[idx[i]]); */
+/*                fprintf(stderr, "\n"); */
+/*                dst[i*stride+j] = src[idx[i]*stride+j]; */
+/*           } */
+/*      } */
+/* } */
 
 /* compute the iou of two bboxes whose elements are {top_left_x, top_left_y, bottom_right_x, bottom_right_y} */
 float computeIou(float *bbox0, float *bbox1)
