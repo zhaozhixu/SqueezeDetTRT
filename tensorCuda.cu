@@ -39,11 +39,16 @@ __global__ void multiplyElementKernel(float *src1, float *src2, float *dst, int 
      dst[di] = src1[di] * src2[di];
 }
 
-__global__ void transformBboxSQDKernel(float *delta, float *anchor, float *res, float img_width, float img_height, float x_scale, float y_scale, int block_size, int total)
+__global__ void transformBboxSQDKernel(float *delta, float *anchor, float *res, float width, float height, float *x_scales, float *y_scales, int batch_vol, int block_size, int total)
 {
      int di = (blockIdx.x * block_size + threadIdx.x) * 4;
      if (di >= total)
           return;
+     int batch_num = di / batch_vol;
+     float x_scale = x_scales[batch_num];
+     float y_scale = y_scales[batch_num];
+     float img_width = width / x_scale;
+     float img_height = height / y_scale;
      float d[4] = {delta[di], delta[di+1], delta[di+2], delta[di+3]};
      float a[4] = {anchor[di], anchor[di+1], anchor[di+2], anchor[di+3]};
      float cx = a[0] + d[0] * a[2] / x_scale;

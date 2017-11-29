@@ -77,14 +77,13 @@ std::string locateFile(const std::string& input)
 }
 
 ILayer*
-addFireLayer(INetworkDefinition* network, ITensor& input, int ns1x1, int ne1x1, int ne3x3,
-             Weights wks1x1, Weights wke1x1, Weights wke3x3,
-             Weights wbs1x1, Weights wbe1x1, Weights wbe3x3)
+addFireLayer(INetworkDefinition* network, ITensor &input, int ns1x1, int ne1x1, int ne3x3,
+             Weights &wks1x1, Weights &wke1x1, Weights &wke3x3,
+             Weights &wbs1x1, Weights &wbe1x1, Weights &wbe3x3)
 {
      auto sq1x1 = network->addConvolution(input, ns1x1, DimsHW{1, 1}, wks1x1, wbs1x1);
      assert(sq1x1 != nullptr);
      sq1x1->setStride(DimsHW{1, 1});
-     // sq1x1->setPadding(); TODO: add padding
      auto relu1 = network->addActivation(*sq1x1->getOutput(0), ActivationType::kRELU);
      assert(relu1 != nullptr);
 
@@ -117,13 +116,13 @@ createConvEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
      auto data = network->addInput(INPUT_NAME, dt, DimsCHW{INPUT_C, INPUT_H, INPUT_W});
      assert(data != nullptr);
 
-     std::map<std::string, Weights> weightMap = loadWeights(locateFile("sqdtrt.wts")); // ?
+     std::map<std::string, Weights> weightMap = loadWeights(locateFile("sqdtrt.wts"));
      auto conv1 = network->addConvolution(*data, 64, DimsHW{3, 3},
                                           weightMap["conv1_kernels"],
                                           weightMap["conv1_bias"]);
      assert(conv1 != nullptr);
      conv1->setStride(DimsHW{2, 2});
-     conv1->setPadding(DimsHW{1, 1});
+     conv1->setPadding(DimsHW{1, 1}); // all kernels of size 3x3 need to set padding 1x1
      auto relu1 = network->addActivation(*conv1->getOutput(0), ActivationType::kRELU);
      assert(relu1 != nullptr);
 
@@ -168,8 +167,8 @@ createConvEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
                                weightMap["fire5_expand3x3_biases"]);
 
      auto pool5 = network->addPooling(*fire5->getOutput(0), PoolingType::kMAX, DimsHW{3, 3});
-     assert(pool3 != nullptr);
-     pool3->setStride(DimsHW{2, 2});
+     assert(pool5 != nullptr);
+     pool5->setStride(DimsHW{2, 2});
      pool5->setPadding(DimsHW{1, 1});
 
      auto fire6 = addFireLayer(network, *pool5->getOutput(0), 48, 192, 192,
@@ -217,9 +216,10 @@ createConvEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
                                 weightMap["fire11_expand3x3_biases"]);
 
      // TODO: add dropout11
-     ILayer *dropout11 = fire11;
+     // not need any more, because dropout probability is 1.0 during evaluation
+     // ILayer *dropout11 = fire11;
 
-     auto preds = network->addConvolution(*dropout11->getOutput(0), CONVOUT_C, DimsHW{3, 3},
+     auto preds = network->addConvolution(*fire11->getOutput(0), CONVOUT_C, DimsHW{3, 3},
                                           weightMap["conv12_kernels"],
                                           weightMap["conv12_biases"]);
      assert(preds != nullptr);
@@ -328,7 +328,7 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      Tensor *confOutputTensor = createTensor((float *)interpretBuffers[confOutputIndex], 3, confOutputDims);
      Tensor *bboxOutputTensor = reshapeTensor(bboxInputTensor, 3, bboxOutputDims);
 
-     float *reduceMaxRes, *reduceArgRes, *mulRes, *bboxRes, *anchorsDevice, xScalesDevice, yScalesDevice;
+     float *reduceMaxRes, *reduceArgRes, *mulRes, *bboxRes, *anchorsDevice, *xScalesDevice, *yScalesDevice;
      size_t reduceMaxResSize = batchSize * anchorsNum * sizeof(float);
      size_t reduceArgResSize = batchSize * anchorsNum * sizeof(float);
      size_t mulResSize = batchSize * anchorsNum * sizeof(float);
@@ -394,26 +394,18 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      cudaEventSynchronize(stop);
      cudaEventElapsedTime(&timeDetect, start, stop);
 
-     // FILE * probs_file = fopen("probs.txt", "w");
-     // FILE * conf0_file = fopen("conf0.txt", "w");
-     // FILE * conf_file = fopen("conf.txt", "w");
-     // FILE * class_file = fopen("class.txt", "w");
-     // FILE * bbox_file = fopen("bbox.txt", "w");
-     // Tensor *probs_host = cloneTensor(classOutputTensor, D2H);
-     // Tensor *conf0_host = cloneTensor(confOutputTensor, D2H);
-     // Tensor *conf_host = cloneTensor(mulResTensor, D2H);
-     // Tensor *class_host = cloneTensor(reduceArgResTensor, D2H);
-     // Tensor *bbox_host = cloneTensor(bboxResTensor, D2H);
-     // fprintTensor(probs_file, probs_host, "%f");
-     // fprintTensor(conf0_file, conf0_host, "%f");
-     // fprintTensor(conf_file, conf_host, "%f");
-     // fprintTensor(class_file, class_host, "%f");
-     // fprintTensor(bbox_file, bbox_host, "%f");
-     // fclose(probs_file);
-     // fclose(conf0_file);
-     // fclose(conf_file);
-     // fclose(class_file);
-     // fclose(bbox_file);
+     saveDeviceTensor("data/convoutTensor.txt", convoutTensor, "%f");
+     saveDeviceTensor("data/classInputTensor.txt", classInputTensor, "%f");
+     saveDeviceTensor("data/confInputTensor.txt", confInputTensor, "%f");
+     saveDeviceTensor("data/bboxInputTensor.txt", bboxInputTensor, "%f");
+     saveDeviceTensor("data/classOutputTensor.txt", classOutputTensor, "%f");
+     saveDeviceTensor("data/confOutputTensor.txt", confOutputTensor, "%f");
+     saveDeviceTensor("data/bboxOutputTensor.txt", bboxOutputTensor, "%f");
+     saveDeviceTensor("data/mulResTensor.txt", mulResTensor, "%f");
+     saveDeviceTensor("data/reduceMaxResTensor.txt", reduceMaxResTensor, "%f");
+     saveDeviceTensor("data/reduceArgResTensor.txt", reduceArgResTensor, "%f");
+     saveDeviceTensor("data/bboxResTensor.txt", bboxResTensor, "%f");
+
      // filter top-n-detection
      // TODO: only batchSize = 1 supported
      Tensor *mulResTensorCopy = cloneTensor(mulResTensor, D2D);
@@ -422,16 +414,16 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      pickElements(reduceArgResTensor->data, finalClass, 1, orderDevice, TOP_N_DETECTION);
      pickElements(bboxResTensor->data, finalBbox, OUTPUT_BBOX_SIZE, orderDevice, TOP_N_DETECTION);
 
-     // FILE * sort_file = fopen("sort.txt", "w");
-     // int *orderHost2 = (int *)cloneMem(orderDevice, anchorsNum * sizeof(int), D2H);
-     // for (int i = 0; i < anchorsNum; i++)
-     //      fprintf(sort_file, "%d\n", orderHost2[i]);
-     // fclose(sort_file);
-     // FILE * finalProbs_file = fopen("finalProbs.txt", "w");
-     // float *finalProbs_host = (float *)cloneMem(finalProbs, TOP_N_DETECTION * sizeof(float), D2H);
-     // for (int i = 0; i < TOP_N_DETECTION; i++)
-     //      fprintf(finalProbs_file, "%f\n", finalProbs_host[i]);
-     // fclose(finalProbs_file);
+     FILE * sort_file = fopen("sort.txt", "w");
+     int *orderHost2 = (int *)cloneMem(orderDevice, anchorsNum * sizeof(int), D2H);
+     for (int i = 0; i < anchorsNum; i++)
+          fprintf(sort_file, "%d\n", orderHost2[i]);
+     fclose(sort_file);
+     FILE * finalProbs_file = fopen("finalProbs.txt", "w");
+     float *finalProbs_host = (float *)cloneMem(finalProbs, TOP_N_DETECTION * sizeof(float), D2H);
+     for (int i = 0; i < TOP_N_DETECTION; i++)
+          fprintf(finalProbs_file, "%f\n", finalProbs_host[i]);
+     fclose(finalProbs_file);
 
      // Tensor *mulResHost = cloneTensor(mulResTensor, D2H);
      // float *finalProbs2 = (float *)malloc(TOP_N_DETECTION * sizeof(float));
@@ -479,6 +471,7 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      CHECK(cudaFree(xScalesDevice));
      CHECK(cudaFree(yScalesDevice));
      CHECK(cudaFree(orderDevice));
+     CHECK(cudaFree(mulResTensorCopy->data))
      free(orderHost);
 }
 
@@ -611,7 +604,7 @@ int main(int argc, char** argv)
      std::vector<std::string> imageList = getImageList(argv[1]);
      printf("image num: %ld\n", imageList.size());
      float *x_scales = new float[imageList.size()];
-     float *y_scales = new float[imageList,size()];
+     float *y_scales = new float[imageList.size()];
      float *data = prepareData(imageList, x_scales, y_scales);
      float *anchors = prepareAnchors(ANCHOR_SHAPE, INPUT_W, INPUT_H, CONVOUT_H, CONVOUT_W, ANCHORS_PER_GRID);
      float *outProbs = new float[INPUT_N * TOP_N_DETECTION];

@@ -20,7 +20,7 @@ static void assertTensor(const Tensor *tensor)
      assert(tensor->len == computeLength(tensor->ndim, tensor->dims));
 }
 
-int isTensorValid(Tensor *tensor)
+int isTensorValid(const Tensor *tensor)
 {
      return (tensor && tensor->data &&
              tensor->ndim < MAXDIM && tensor->ndim > 0 &&
@@ -73,9 +73,9 @@ void *cloneMem(const void *src, size_t size, CloneKind kind)
 
 }
 
-Tensor *cloneTensor(Tensor *src, CloneKind kind)
+Tensor *cloneTensor(const Tensor *src, CloneKind kind)
 {
-     assertTensor(src);
+     assert(isTensorValid(src));
      float *data = (float *)cloneMem(src->data, src->len * sizeof(float), kind);
      Tensor *dst = createTensor(data, src->ndim, src->dims);
      return dst;
@@ -196,6 +196,33 @@ void fprintTensor(FILE *stream, const Tensor *tensor, const char *fmt)
 void printTensor(const Tensor *tensor, const char *fmt)
 {
      fprintTensor(stdout, tensor, fmt);
+}
+
+void fprintDeviceTensor(FILE *stream, const Tensor *d_tensor, const char *fmt)
+{
+     assert(isTensorValid(d_tensor));
+     Tensor *h_tensor = cloneTensor(d_tensor, D2H);
+     fprintTensor(stream, h_tensor, fmt);
+     free(h_tensor->data);
+}
+
+void printDeviceTensor(const Tensor *d_tensor, const char *fmt)
+{
+     fprintTensor(stdout, d_tensor, fmt);
+}
+
+void saveTensor(const char *file_name, const Tensor *tensor, const char *fmt)
+{
+     FILE *fp = fopen(file_name, "w");
+     fprintTensor(fp, tensor, fmt);
+     fclose(fp);
+}
+
+void saveDeviceTensor(const char *file_name, const Tensor *d_tensor, const char *fmt)
+{
+     FILE *fp = fopen(file_name, "w");
+     fprintDeviceTensor(fp, d_tensor, fmt);
+     fclose(fp);
 }
 
 Tensor *createSlicedTensor(const Tensor *src, int dim, int start, int len)
@@ -343,13 +370,15 @@ Tensor *transformBboxSQD(const Tensor *delta, const Tensor *anchor, Tensor *res,
      assert(isShapeEqual(delta, res));
      assert(delta->dims[delta->ndim-1] == 4);
 
-     int i, thread_num, block_size, block_num;
+     int i, thread_num, block_size, block_num, batch_vol;
+     for (i = 1, batch_vol = 1; i < res->ndim-1; i++)
+          batch_vol *= res->dims[i];
      for (i = 0, thread_num = 1; i < res->ndim-1; i++)
           thread_num *= res->dims[i];
      block_size = MAX_THREADS_PER_BLOCK;
      block_num = thread_num / block_size + 1;
 
-     transformBboxSQDKernel<<<block_num, block_size>>>(delta->data, anchor->data, res->data, img_width, img_height, x_scales, y_scales, block_size, res->len);
+     transformBboxSQDKernel<<<block_num, block_size>>>(delta->data, anchor->data, res->data, img_width, img_height, x_scales, y_scales, batch_vol, block_size, res->len);
      return res;
 }
 
