@@ -76,11 +76,15 @@ std::map<std::string, Weights> loadWeights(const std::string file)
     return weightMap;
 }
 
-cv::Mat readImage(const std::string& filename, int width, int height)
+cv::Mat readImage(const std::string& filename, int width, int height, float *x_scale, float *y_scale)
 {
     cv::Mat img = cv::imread(filename);
     printf("filename: %s\n", filename.c_str());
     printf("img.total(): %ld\n", img.total());
     cv::resize(img, img, cv::Size(width, height));
+    if (x_scale && y_scale) {
+         *x_scale = 1.0 * width / img.size().width;
+         *y_scale = 1.0 * height / img.size().height;
+    }
     return img;
 }

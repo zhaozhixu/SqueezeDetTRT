@@ -276,7 +276,7 @@ createInterpretEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
      return engine;
 }
 
-void doInference(IExecutionContext& convContext, IExecutionContext& interpretContext, float* input, float* anchors, float *outProbs, float *outClass, float *outBbox, int batchSize)
+void doInference(IExecutionContext& convContext, IExecutionContext& interpretContext, float* input, float* anchors, float *x_scales, float *y_scales, float *outProbs, float *outClass, float *outBbox, int batchSize)
 {
      const ICudaEngine& convEngine = convContext.getEngine();
      const ICudaEngine& interpretEngine = interpretContext.getEngine();
@@ -328,28 +328,32 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      Tensor *confOutputTensor = createTensor((float *)interpretBuffers[confOutputIndex], 3, confOutputDims);
      Tensor *bboxOutputTensor = reshapeTensor(bboxInputTensor, 3, bboxOutputDims);
 
-     float *reduceMaxRes, *reduceArgRes, *mulRes, *bboxRes, *anchorsCuda;
+     float *reduceMaxRes, *reduceArgRes, *mulRes, *bboxRes, *anchorsDevice, xScalesDevice, yScalesDevice;
      size_t reduceMaxResSize = batchSize * anchorsNum * sizeof(float);
      size_t reduceArgResSize = batchSize * anchorsNum * sizeof(float);
      size_t mulResSize = batchSize * anchorsNum * sizeof(float);
      size_t bboxResSize = batchSize * anchorsNum * OUTPUT_BBOX_SIZE * sizeof(float);
-     size_t anchorsCudaSize = batchSize * anchorsNum * ANCHOR_SIZE * sizeof(float);
+     size_t anchorsDeviceSize = batchSize * anchorsNum * ANCHOR_SIZE * sizeof(float);
+     size_t xScalesDeviceSize = batchSize * sizeof(float);
+     size_t yScalesDeviceSize = batchSize * sizeof(float);
      CHECK(cudaMalloc(&reduceMaxRes, reduceMaxResSize));
      CHECK(cudaMalloc(&reduceArgRes, reduceArgResSize));
      CHECK(cudaMalloc(&mulRes, mulResSize));
      CHECK(cudaMalloc(&bboxRes, bboxResSize));
-     anchorsCuda = (float *)cloneMem(anchors, anchorsCudaSize, H2D);
+     anchorsDevice = (float *)cloneMem(anchors, anchorsDeviceSize, H2D);
+     xScalesDevice = (float *)cloneMem(x_scales, xScalesDeviceSize, H2D);
+     yScalesDevice = (float *)cloneMem(y_scales, yScalesDeviceSize, H2D);
 
      int reduceMaxResDims[] = {INPUT_N, anchorsNum, 1};
      int reduceArgResDims[] = {INPUT_N, anchorsNum, 1};
      int mulResDims[] = {INPUT_N, anchorsNum, 1};
      int bboxResDims[] = {INPUT_N, anchorsNum, OUTPUT_BBOX_SIZE};
-     int anchorsCudaDims[] = {INPUT_N, anchorsNum, ANCHOR_SIZE};
+     int anchorsDeviceDims[] = {INPUT_N, anchorsNum, ANCHOR_SIZE};
      Tensor *reduceMaxResTensor = createTensor(reduceMaxRes, 3, reduceMaxResDims);
      Tensor *reduceArgResTensor = createTensor(reduceArgRes, 3, reduceArgResDims);
      Tensor *mulResTensor = createTensor(mulRes, 3, mulResDims);
      Tensor *bboxResTensor = createTensor(bboxRes, 3, bboxResDims);
-     Tensor *anchorsCudaTensor = createTensor(anchorsCuda, 3, anchorsCudaDims);
+     Tensor *anchorsDeviceTensor = createTensor(anchorsDevice, 3, anchorsDeviceDims);
 
      int *orderDevice, *orderHost; // for top-n-detecion
      assert(orderHost = (int *)malloc(batchSize * anchorsNum * sizeof(int)));
@@ -384,7 +388,7 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      interpretContext.enqueue(batchSize, interpretBuffers, stream, nullptr);
      reduceArgMax(classOutputTensor, reduceMaxResTensor, reduceArgResTensor, 2);
      multiplyElement(reduceMaxResTensor, confOutputTensor, mulResTensor);
-     transformBboxSQD(bboxOutputTensor, anchorsCudaTensor, bboxResTensor, INPUT_W, INPUT_H);
+     transformBboxSQD(bboxOutputTensor, anchorsDeviceTensor, bboxResTensor, INPUT_W, INPUT_H, xScalesDevice, yScalesDevice);
 
      cudaEventRecord(stop, 0);
      cudaEventSynchronize(stop);
@@ -471,7 +475,11 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      CHECK(cudaFree(reduceArgRes));
      CHECK(cudaFree(mulRes));
      CHECK(cudaFree(bboxRes));
-     CHECK(cudaFree(anchorsCuda));
+     CHECK(cudaFree(anchorsDevice));
+     CHECK(cudaFree(xScalesDevice));
+     CHECK(cudaFree(yScalesDevice));
+     CHECK(cudaFree(orderDevice));
+     free(orderHost);
 }
 
 // maxBatch - NB must be at least as large as the batch we want to run with)
@@ -495,17 +503,21 @@ void APIToModel(unsigned int maxBatchSize, IHostMemory **convModelStream, IHostM
      builder->destroy();
 }
 
-float *prepareData(std::vector<std::string> &imageList)
+float *prepareData(std::vector<std::string> &imageList, float *x_scales, float *y_scales)
 {
      std::vector<cv::Mat> images; // available images
      float* data = new float[INPUT_N * INPUT_C * INPUT_H * INPUT_W];
 
-     int N = 1;// TODO: make it dynamic
+     int N = imageList.size();// TODO: make it dynamic
      // srand(unsigned(time(nullptr))); // read a random sample image
      // std::random_shuffle(imageList.begin(), imageList.end(), [](int i) {return rand() % i; });
      assert(images.size() <= imageList.size());
-     for (int i = 0; i < N; ++i)
-          images.push_back(readImage(imageList[i], INPUT_W, INPUT_H));
+     float x_scale, y_scale;
+     for (int i = 0; i < N; ++i) {
+          images.push_back(readImage(imageList[i], INPUT_W, INPUT_H, &x_scale, &y_scale));
+          x_scales[i] = x_scale;
+          y_scales[i] = y_scale;
+     }
 
      // pixel mean used by the SqueezeDet's author
      float pixelMean[3]{ 103.939f, 116.779f, 123.68f }; // also in BGR order
@@ -598,7 +610,9 @@ int main(int argc, char** argv)
 
      std::vector<std::string> imageList = getImageList(argv[1]);
      printf("image num: %ld\n", imageList.size());
-     float *data = prepareData(imageList);
+     float *x_scales = new float[imageList.size()];
+     float *y_scales = new float[imageList,size()];
+     float *data = prepareData(imageList, x_scales, y_scales);
      float *anchors = prepareAnchors(ANCHOR_SHAPE, INPUT_W, INPUT_H, CONVOUT_H, CONVOUT_W, ANCHORS_PER_GRID);
      float *outProbs = new float[INPUT_N * TOP_N_DETECTION];
      float *outClass = new float[INPUT_N * TOP_N_DETECTION];
@@ -623,7 +637,7 @@ int main(int argc, char** argv)
      IExecutionContext *interpretContext = interpretEngine->createExecutionContext();
 
      // run inference
-     doInference(*convContext, *interpretContext, data, anchors, outProbs, outClass, outBbox, INPUT_N);
+     doInference(*convContext, *interpretContext, data, anchors, x_scales, y_scales, outProbs, outClass, outBbox, INPUT_N);
      detectionFilter(outBbox, outClass, outProbs, keep, TOP_N_DETECTION, NMS_THRESH, PROB_THRESH);
      fprintResult(stdout, outBbox, outClass, outProbs, keep, TOP_N_DETECTION);
 
@@ -635,6 +649,8 @@ int main(int argc, char** argv)
      runtime->destroy();
 
      delete[] data;
+     delete[] x_scales;
+     delete[] y_scales;
      delete[] anchors;
      delete[] outProbs;
      delete[] outClass;

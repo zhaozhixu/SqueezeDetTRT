@@ -337,7 +337,7 @@ Tensor *multiplyElement(const Tensor *src1, const Tensor *src2, Tensor *dst)
 }
 
 /* transform from bbox delta to bbox coordinates, using hyper param EXP_THRESH = 1.0 */
-Tensor *transformBboxSQD(const Tensor *delta, const Tensor *anchor, Tensor *res, float img_width, float img_height)
+Tensor *transformBboxSQD(const Tensor *delta, const Tensor *anchor, Tensor *res, float img_width, float img_height, float *x_scales, float *y_scales)
 {
      assert(isShapeEqual(delta, anchor));
      assert(isShapeEqual(delta, res));
@@ -349,7 +349,7 @@ Tensor *transformBboxSQD(const Tensor *delta, const Tensor *anchor, Tensor *res,
      block_size = MAX_THREADS_PER_BLOCK;
      block_num = thread_num / block_size + 1;
 
-     transformBboxSQDKernel<<<block_num, block_size>>>(delta->data, anchor->data, res->data, img_width, img_height, block_size, res->len);
+     transformBboxSQDKernel<<<block_num, block_size>>>(delta->data, anchor->data, res->data, img_width, img_height, x_scales, y_scales, block_size, res->len);
      return res;
 }
 

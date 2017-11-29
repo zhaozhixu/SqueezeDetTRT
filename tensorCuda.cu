@@ -39,17 +39,17 @@ __global__ void multiplyElementKernel(float *src1, float *src2, float *dst, int 
      dst[di] = src1[di] * src2[di];
 }
 
-__global__ void transformBboxSQDKernel(float *delta, float *anchor, float *res, float img_width, float img_height, int block_size, int total)
+__global__ void transformBboxSQDKernel(float *delta, float *anchor, float *res, float img_width, float img_height, float x_scale, float y_scale, int block_size, int total)
 {
      int di = (blockIdx.x * block_size + threadIdx.x) * 4;
      if (di >= total)
           return;
      float d[4] = {delta[di], delta[di+1], delta[di+2], delta[di+3]};
      float a[4] = {anchor[di], anchor[di+1], anchor[di+2], anchor[di+3]};
-     float cx = a[0] + d[0] * a[2];
-     float cy = a[1] + d[1] * a[3];
-     float w = a[2] * (d[2] < 1 ? expf(d[2]) : d[2] * E);
-     float h = a[3] * (d[3] < 1 ? expf(d[3]) : d[3] * E);
+     float cx = a[0] + d[0] * a[2] / x_scale;
+     float cy = a[1] + d[1] * a[3] / y_scale;
+     float w = a[2] * (d[2] < 1 ? expf(d[2]) : d[2] * E) / x_scale;
+     float h = a[3] * (d[3] < 1 ? expf(d[3]) : d[3] * E) / y_scale;
      res[di] = min(max(cx - w * 0.5, 0), img_width - 1);
      res[di+1] = min(max(cy - h * 0.5, 0), img_height - 1);
      res[di+2] = max(min(cx + w * 0.5, img_width - 1), 0);

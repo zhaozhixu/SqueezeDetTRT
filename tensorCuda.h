@@ -7,7 +7,7 @@
 __global__ void sliceTensorKernel(float *src, float *dst, int sdim, int ddim, int start, int block_size);
 __global__ void reduceArgMaxKernel(float *src, float *dst, float *arg, int dim_size, int block_size, int total);
 __global__ void multiplyElementKernel(float *src1, float *src2, float *dst, int block_size, int total);
-__global__ void transformBboxSQDKernel(float *delta, float *anchor, float *res, float img_width, float img_height, int block_size, int total);
+__global__ void transformBboxSQDKernel(float *delta, float *anchor, float *res, float img_width, float img_height, float x_scale, float y_scale, int block_size, int total);
 __global__ void pickElementsKernel(float *src, float *dst, int *idx, int len, int stride, int block_size);
 
 #endif  /* _TENSOR_CUDA_H_ */
