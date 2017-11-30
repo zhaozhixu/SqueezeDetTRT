@@ -313,13 +313,20 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      CHECK(cudaMalloc(&interpretBuffers[classOutputIndex], classOutputSize));
      CHECK(cudaMalloc(&interpretBuffers[confOutputIndex], confOutputSize));
 
-     int convout_dims[] = {INPUT_N, CONVOUT_H, CONVOUT_W, CONVOUT_C};
-     int classInputDims[] = {INPUT_N, CONVOUT_H, CONVOUT_W, CLASS_SLICE_C};
-     int confInputDims[] = {INPUT_N, CONVOUT_H, CONVOUT_W, CONF_SLICE_C};
-     int bboxInputDims[] = {INPUT_N, CONVOUT_H, CONVOUT_W, BBOX_SLICE_C};
-     int classOutputDims[] = {INPUT_N, anchorsNum, OUTPUT_CLS_SIZE};
-     int confOutputDims[] = {INPUT_N, anchorsNum, 1};
-     int bboxOutputDims[] = {INPUT_N, anchorsNum, OUTPUT_BBOX_SIZE};
+     // int convout_dims[] = {INPUT_N, CONVOUT_H, CONVOUT_W, CONVOUT_C};
+     // int classInputDims[] = {INPUT_N, CONVOUT_H, CONVOUT_W, CLASS_SLICE_C};
+     // int confInputDims[] = {INPUT_N, CONVOUT_H, CONVOUT_W, CONF_SLICE_C};
+     // int bboxInputDims[] = {INPUT_N, CONVOUT_H, CONVOUT_W, BBOX_SLICE_C};
+     // int classOutputDims[] = {INPUT_N, anchorsNum, OUTPUT_CLS_SIZE};
+     // int confOutputDims[] = {INPUT_N, anchorsNum, 1};
+     // int bboxOutputDims[] = {INPUT_N, anchorsNum, OUTPUT_BBOX_SIZE};
+     int convout_dims[] = {INPUT_N, CONVOUT_C, CONVOUT_H, CONVOUT_W};
+     int classInputDims[] = {INPUT_N, CLASS_SLICE_C, CONVOUT_H, CONVOUT_W};
+     int confInputDims[] = {INPUT_N, CONF_SLICE_C, CONVOUT_H, CONVOUT_W};
+     int bboxInputDims[] = {INPUT_N, BBOX_SLICE_C, CONVOUT_H, CONVOUT_W};
+     int classOutputDims[] = {INPUT_N, OUTPUT_CLS_SIZE, anchorsNum};
+     int confOutputDims[] = {INPUT_N, 1, anchorsNum};
+     int bboxOutputDims[] = {INPUT_N, OUTPUT_BBOX_SIZE, anchorsNum};
      Tensor *convoutTensor = createTensor((float *)convBuffers[convoutIndex], 4, convout_dims);
      Tensor *classInputTensor = createTensor((float *)interpretBuffers[classInputIndex], 4, classInputDims);
      Tensor *confInputTensor = createTensor((float *)interpretBuffers[confInputIndex], 4, confInputDims);
@@ -344,7 +351,12 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      xScalesDevice = (float *)cloneMem(x_scales, xScalesDeviceSize, H2D);
      yScalesDevice = (float *)cloneMem(y_scales, yScalesDeviceSize, H2D);
 
-     int reduceMaxResDims[] = {INPUT_N, anchorsNum, 1};
+     // int reduceMaxResDims[] = {INPUT_N, anchorsNum, 1};
+     // int reduceArgResDims[] = {INPUT_N, anchorsNum, 1};
+     // int mulResDims[] = {INPUT_N, anchorsNum, 1};
+     // int bboxResDims[] = {INPUT_N, anchorsNum, OUTPUT_BBOX_SIZE};
+     // int anchorsDeviceDims[] = {INPUT_N, anchorsNum, ANCHOR_SIZE};
+     int reduceMaxResDims[] = {INPUT_N, anchorsNum, 1}; // TODO: change order
      int reduceArgResDims[] = {INPUT_N, anchorsNum, 1};
      int mulResDims[] = {INPUT_N, anchorsNum, 1};
      int bboxResDims[] = {INPUT_N, anchorsNum, OUTPUT_BBOX_SIZE};
@@ -382,9 +394,9 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      CHECK(cudaMemcpyAsync(convBuffers[inputIndex], input, inputSize, cudaMemcpyHostToDevice, stream));
 
      convContext.enqueue(batchSize, convBuffers, stream, nullptr);
-     sliceTensorCuda(convoutTensor, classInputTensor, 3, 0, CLASS_SLICE_C);
-     sliceTensorCuda(convoutTensor, confInputTensor, 3, CLASS_SLICE_C, CONF_SLICE_C);
-     sliceTensorCuda(convoutTensor, bboxInputTensor, 3, CLASS_SLICE_C + CONF_SLICE_C, BBOX_SLICE_C);
+     sliceTensorCuda(convoutTensor, classInputTensor, 1, 0, CLASS_SLICE_C);
+     sliceTensorCuda(convoutTensor, confInputTensor, 1, CLASS_SLICE_C, CONF_SLICE_C);
+     sliceTensorCuda(convoutTensor, bboxInputTensor, 1, CLASS_SLICE_C + CONF_SLICE_C, BBOX_SLICE_C);
      interpretContext.enqueue(batchSize, interpretBuffers, stream, nullptr);
      reduceArgMax(classOutputTensor, reduceMaxResTensor, reduceArgResTensor, 2);
      multiplyElement(reduceMaxResTensor, confOutputTensor, mulResTensor);
@@ -501,7 +513,7 @@ float *prepareData(std::vector<std::string> &imageList, float *x_scales, float *
      std::vector<cv::Mat> images; // available images
      float* data = new float[INPUT_N * INPUT_C * INPUT_H * INPUT_W];
 
-     int N = imageList.size();// TODO: make it dynamic
+     int N = INPUT_N;// TODO: make it dynamic
      // srand(unsigned(time(nullptr))); // read a random sample image
      // std::random_shuffle(imageList.begin(), imageList.end(), [](int i) {return rand() % i; });
      assert(images.size() <= imageList.size());
@@ -520,7 +532,7 @@ float *prepareData(std::vector<std::string> &imageList, float *x_scales, float *
           {
                // the color image to input should be in BGR order
                for (unsigned j = 0, volChl = INPUT_H*INPUT_W; j < volChl; ++j)
-                    data[i*volImg + c*volChl + j] = float(images[i].data[j*INPUT_C]) - pixelMean[c];
+                    data[i*volImg + c*volChl + j] = float(images[i].data[j*INPUT_C+c]) - pixelMean[c];
           }
      }
 

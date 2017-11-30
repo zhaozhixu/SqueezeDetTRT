@@ -311,12 +311,10 @@ Tensor *reshapeTensor(const Tensor *src, int newNdim, const int *newDims)
      return dst;
 }
 
-/* current only support dim = src->dims[src->ndim-1] */
 Tensor *createReducedTensor(const Tensor *src, int dim)
 {
      assertTensor(src);
      assert(dim < src->ndim && dim >= 0);
-     assert(dim == src->ndim-1); /* TODO: get rid of this limit */
 
      Tensor *dst = (Tensor *)malloc(sizeof(Tensor));
      dst->ndim = src->ndim;
@@ -328,19 +326,18 @@ Tensor *createReducedTensor(const Tensor *src, int dim)
      return dst;
 }
 
-/* current only support dim = src->dims[src->ndim-1] */
 void *reduceArgMax(const Tensor *src, Tensor *dst, Tensor *arg, int dim)
 {
      assertTensor(src);
      assertTensor(dst);
      assertTensor(arg);
-     assert(dim == src->ndim-1); /* TODO: get rid of this limit */
+     assert(dim < src->ndim && dim >= 0);
      for (int i = 0; i < dst->ndim; i++)
           assert(i == dim ? dst->dims[i] == 1 : dst->dims[i] == src->dims[i] &&
                  i == dim ? arg->dims[i] == 1 : arg->dims[i] == src->dims[i]);
 
      int i, thread_num, block_size, block_num;
-     for (i = 0, thread_num = 1; i < dim; i++)
+     for (i = dim+1, thread_num = 1; i < dst->ndim; i++)
           thread_num *= dst->dims[i];
      block_size = MAX_THREADS_PER_BLOCK;
      block_num = thread_num / block_size + 1;
