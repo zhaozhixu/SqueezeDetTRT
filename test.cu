@@ -128,7 +128,7 @@ void testTransformBboxSQD()
      float *res_cuda_data;
      cudaMalloc(&res_cuda_data, sizeof(float) * 24);
 
-     int dims[] = {2, 4, 3};
+     int dims[] = {1, 4, 6};
      Tensor *delta_host = createTensor(delta_host_data, 3, dims);
      Tensor *anchor_host = createTensor(anchor_host_data, 3, dims);
      Tensor *delta_cuda = createTensor(delta_cuda_data, 3, dims);
