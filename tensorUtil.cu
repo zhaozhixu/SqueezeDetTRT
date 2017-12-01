@@ -336,13 +336,19 @@ void *reduceArgMax(const Tensor *src, Tensor *dst, Tensor *arg, int dim)
           assert(i == dim ? dst->dims[i] == 1 : dst->dims[i] == src->dims[i] &&
                  i == dim ? arg->dims[i] == 1 : arg->dims[i] == src->dims[i]);
 
-     int i, thread_num, block_size, block_num;
+     /* suppose the shape of src is [N, C, H, W], dim = 1, then thread_num is N x H x W
+        reduce_vol is H x W, index_vol is C x H x W */
+     int i, thread_num, block_size, block_num, reduce_vol, index_vol;
      for (i = dim+1, thread_num = 1; i < dst->ndim; i++)
+          thread_num *= dst->dims[i];
+     reduce_vol = thread_num;
+     index_vol = thread_num * src->dims[dim];
+     for (i = 0; i < dim; i++)
           thread_num *= dst->dims[i];
      block_size = MAX_THREADS_PER_BLOCK;
      block_num = thread_num / block_size + 1;
 
-     reduceArgMaxKernel<<<block_num, block_size>>>(src->data, dst->data, arg->data, src->dims[dim], block_size, dst->len);
+     reduceArgMaxKernel<<<block_num, block_size>>>(src->data, dst->data, arg->data, src->dims[dim], reduce_vol, index_vol, block_size, thread_num);
      return dst;
 }
 
@@ -360,22 +366,26 @@ Tensor *multiplyElement(const Tensor *src1, const Tensor *src2, Tensor *dst)
      return dst;
 }
 
-/* transform from bbox delta to bbox coordinates, using hyper param EXP_THRESH = 1.0 */
-Tensor *transformBboxSQD(const Tensor *delta, const Tensor *anchor, Tensor *res, float img_width, float img_height, float *x_scales, float *y_scales)
+/* transform from bbox delta to bbox coordinates, using hyper param EXP_THRESH = 1.0.
+   delta, anchor, res are all of shape [N, 4, A], where N is batch size and A is anchors number per image.
+   width and height are resized image width and height.
+   x_scales and y_scales are length of N. */
+Tensor *transformBboxSQD(const Tensor *delta, const Tensor *anchor, Tensor *res, float width, float height, float *x_scales, float *y_scales)
 {
      assert(isShapeEqual(delta, anchor));
      assert(isShapeEqual(delta, res));
-     assert(delta->dims[delta->ndim-1] == 4);
+     assert(delta->ndim == 3);
+     assert(delta->dims[1] == 4);
 
-     int i, thread_num, block_size, block_num, batch_vol;
-     for (i = 1, batch_vol = 1; i < res->ndim-1; i++)
-          batch_vol *= res->dims[i];
-     for (i = 0, thread_num = 1; i < res->ndim-1; i++)
-          thread_num *= res->dims[i];
+     /* take 4 elements from each of delta and anchor,
+        and put 4 result elements to res in one thread */
+     int thread_num, block_size, block_num, anchor_num;
+     anchor_num = res->dims[2];
+     thread_num = res->dims[0] * res->dims[2];
      block_size = MAX_THREADS_PER_BLOCK;
      block_num = thread_num / block_size + 1;
 
-     transformBboxSQDKernel<<<block_num, block_size>>>(delta->data, anchor->data, res->data, img_width, img_height, x_scales, y_scales, batch_vol, block_size, res->len);
+     transformBboxSQDKernel<<<block_num, block_size>>>(delta->data, anchor->data, res->data, width, height, x_scales, y_scales, anchor_num, block_size, thread_num);
      return res;
 }
 

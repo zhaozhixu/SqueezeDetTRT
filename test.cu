@@ -7,6 +7,7 @@
 
 clock_t start, end;
 Tensor *t, *tcuda;
+float *tcuda_data;
 
 int ndim = 3;
 int dims[] = {3, 2, 3};
@@ -15,7 +16,7 @@ float data[] = {0.0, 1.0, 2.0, 3.0,
                 8.0, 9.0, 10.0, 11.0,
                 12.0, 13.0, 14.0, 15.0,
                 16.0, 17.0};
-/* float data[] = {0.0, 2.0, 1.0, */
+/*  data[] = {0.0, 2.0, 1.0, */
 /*                 5.0, 4.0, 3.0, */
 /*                 6.0, 7.0, 6.0, */
 /*                 9.0, 10.0, 11.0, */
@@ -35,8 +36,9 @@ void init()
      /*      data[i] = 1.0; */
 
      t = createTensor(data, ndim, dims);
-     float *tcuda_data = (float *)cloneMem(t->data, sizeof(float) * t->len, H2D);
-     tcuda = createTensor(tcuda_data, t->ndim, t->dims);
+     /* tcuda_data = (float *)cloneMem(t->data, sizeof(float) * t->len, H2D); */
+     tcuda = cloneTensor(t, H2D);
+     /* tcuda = createTensor(tcuda_data, t->ndim, t->dims); */
      printTensor(t, "%.2f");
 }
 
@@ -80,11 +82,12 @@ void testReshapeTensor()
 
 void testReduceArgMax()
 {
+     assert(isTensorValid(tcuda));
      /* printTensor(t, "%.2f"); */
-     Tensor *dst = createReducedTensor(tcuda, tcuda->ndim-1);
-     Tensor *arg = createReducedTensor(tcuda, tcuda->ndim-1);
+     Tensor *dst = createReducedTensor(tcuda, tcuda->ndim-2);
+     Tensor *arg = createReducedTensor(tcuda, tcuda->ndim-2);
      start = clock();
-     reduceArgMax(tcuda, dst, arg, tcuda->ndim-1);
+     reduceArgMax(tcuda, dst, arg, tcuda->ndim-2);
      end = clock();
      printf("reduceArgMax in %ld\n", end - start);
 
@@ -125,19 +128,22 @@ void testTransformBboxSQD()
      float *res_cuda_data;
      cudaMalloc(&res_cuda_data, sizeof(float) * 24);
 
-     int dims[] = {2, 3, 4};
+     int dims[] = {2, 4, 3};
      Tensor *delta_host = createTensor(delta_host_data, 3, dims);
      Tensor *anchor_host = createTensor(anchor_host_data, 3, dims);
      Tensor *delta_cuda = createTensor(delta_cuda_data, 3, dims);
      Tensor *anchor_cuda = createTensor(anchor_cuda_data, 3, dims);
      Tensor *res_cuda = createTensor(res_cuda_data, 3, dims);
+     float x_scales[] = {1.}, y_scales[] = {1.};
+     float *x_scales_device = (float *)cloneMem(x_scales, sizeof(float), H2D);
+     float *y_scales_device = (float *)cloneMem(y_scales, sizeof(float), H2D);
 
      printf("delta_host:\n");
      printTensor(delta_host, "%.6f");
      printf("anchor_host:\n");
      printTensor(anchor_host, "%.6f");
      start =clock();
-     transformBboxSQD(delta_cuda, anchor_cuda, res_cuda, 1248, 384);
+     transformBboxSQD(delta_cuda, anchor_cuda, res_cuda, 1248, 384, x_scales_device, y_scales_device);
      end = clock();
      printf("transformBboxSQD in %ld\n", end - start);
      float *res_host_data = (float *)cloneMem(res_cuda_data, sizeof(float) * 24, D2H);
@@ -155,39 +161,36 @@ void testAnchor()
                              224, 108, 78, 170, 72, 43};
      float center_x[W], center_y[H];
      float anchors[H*W*B*4];
-     int i, j, k;
+     /* int i, j, k; */
+     int i;
      for (i = 1; i <= W; i++)
           center_x[i-1] = i * width / (W + 1.0);
      for (i = 1; i <= H; i++)
           center_y[i-1] = i * height / (H + 1.0);
-     int anchors_dims[] = {W, H, B, 4};
+     /* int anchors_dims[] = {W, H, B, 4}; */
+     int anchors_dims[] = {4, B, H, W};
      Tensor *anchor_tensor = createTensor(anchors, 4, anchors_dims);
-     /* int w_vol = anchor_tensor->dims[1] * anchor_tensor->dims[2] * anchor_tensor->dims[3]; */
-     /* int h_vol = anchor_tensor->dims[2] * anchor_tensor->dims[3]; */
-     /* int b_vol = anchor_tensor->dims[3]; */
-     int w_vol = H*B*4;
-     int h_vol = B*4;
-     int b_vol = 4;
-     /* for (i = 0; i < anchor_tensor->dims[0]; i++) { */
-     /*      for (j = 0; j < anchor_tensor->dims[1]; j++) { */
-     /*           for (k = 0; k < anchor_tensor->dims[2]; k++) { */
-     /*                anchor_tensor->data[i*w_vol+j*h_vol+k*b_vol] = center_x[i]; */
-     /*                anchor_tensor->data[i*w_vol+j*h_vol+k*b_vol+1] = center_y[j]; */
-     /*                anchor_tensor->data[i*w_vol+j*h_vol+k*b_vol+2] = anchor_shape[k*2]; */
-     /*                anchor_tensor->data[i*w_vol+j*h_vol+k*b_vol+3] = anchor_shape[k*2+1]; */
+     int a_vol = B * H * W;
+     int b_vol = H * W;
+     for (i = 0; i < a_vol; i++) {
+          anchors[i] = center_x[i % W];
+          anchors[a_vol + i] = center_y[i / W % H];
+          anchors[a_vol * 2 + i] = anchor_shape[i / b_vol * 2];
+          anchors[a_vol * 3 + i] = anchor_shape[i / b_vol * 2 + 1];
+     }
+     /* int w_vol = H*B*4; */
+     /* int h_vol = B*4; */
+     /* int b_vol = 4; */
+     /* for (i = 0; i < W; i++) { */
+     /*      for (j = 0; j < H; j++) { */
+     /*           for (k = 0; k < B; k++) { */
+     /*                anchors[i*w_vol+j*h_vol+k*b_vol] = center_x[i]; */
+     /*                anchors[i*w_vol+j*h_vol+k*b_vol+1] = center_y[j]; */
+     /*                anchors[i*w_vol+j*h_vol+k*b_vol+2] = anchor_shape[k*2]; */
+     /*                anchors[i*w_vol+j*h_vol+k*b_vol+3] = anchor_shape[k*2+1]; */
      /*           } */
      /*      } */
      /* } */
-     for (i = 0; i < W; i++) {
-          for (j = 0; j < H; j++) {
-               for (k = 0; k < B; k++) {
-                    anchors[i*w_vol+j*h_vol+k*b_vol] = center_x[i];
-                    anchors[i*w_vol+j*h_vol+k*b_vol+1] = center_y[j];
-                    anchors[i*w_vol+j*h_vol+k*b_vol+2] = anchor_shape[k*2];
-                    anchors[i*w_vol+j*h_vol+k*b_vol+3] = anchor_shape[k*2+1];
-               }
-          }
-     }
      printf("anchor_tensor:\n");
      printTensor(anchor_tensor, "%.2f");
 }
@@ -294,16 +297,16 @@ void testPickElements()
 
 int main(int argc, char *argv[])
 {
-     /* init(); */
+     init();
      /* testSliceTensor(); */
      /* testReshapeTensor(); */
      /* testReduceArgMax(); */
      /* testMultiplyElement(); */
-     /* testTransformBboxSQD(); */
+     testTransformBboxSQD();
      /* testAnchor(); */
      /* testThrustSort(); */
      /* findThrustBug(); */
      /* testOpencv(); */
      /* testIou(); */
-     testPickElements();
+     /* testPickElements(); */
 }

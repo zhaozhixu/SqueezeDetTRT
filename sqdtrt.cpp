@@ -324,9 +324,9 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      int classInputDims[] = {INPUT_N, CLASS_SLICE_C, CONVOUT_H, CONVOUT_W};
      int confInputDims[] = {INPUT_N, CONF_SLICE_C, CONVOUT_H, CONVOUT_W};
      int bboxInputDims[] = {INPUT_N, BBOX_SLICE_C, CONVOUT_H, CONVOUT_W};
-     int classOutputDims[] = {INPUT_N, OUTPUT_CLS_SIZE, anchorsNum};
+     int classOutputDims[] = {INPUT_N, OUTPUT_CLS_SIZE, anchorsNum}; // TODO: order not sure
      int confOutputDims[] = {INPUT_N, 1, anchorsNum};
-     int bboxOutputDims[] = {INPUT_N, OUTPUT_BBOX_SIZE, anchorsNum};
+     int bboxOutputDims[] = {INPUT_N, OUTPUT_BBOX_SIZE, anchorsNum}; // TODO: order not sure
      Tensor *convoutTensor = createTensor((float *)convBuffers[convoutIndex], 4, convout_dims);
      Tensor *classInputTensor = createTensor((float *)interpretBuffers[classInputIndex], 4, classInputDims);
      Tensor *confInputTensor = createTensor((float *)interpretBuffers[confInputIndex], 4, confInputDims);
@@ -356,11 +356,11 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      // int mulResDims[] = {INPUT_N, anchorsNum, 1};
      // int bboxResDims[] = {INPUT_N, anchorsNum, OUTPUT_BBOX_SIZE};
      // int anchorsDeviceDims[] = {INPUT_N, anchorsNum, ANCHOR_SIZE};
-     int reduceMaxResDims[] = {INPUT_N, anchorsNum, 1}; // TODO: change order
-     int reduceArgResDims[] = {INPUT_N, anchorsNum, 1};
-     int mulResDims[] = {INPUT_N, anchorsNum, 1};
-     int bboxResDims[] = {INPUT_N, anchorsNum, OUTPUT_BBOX_SIZE};
-     int anchorsDeviceDims[] = {INPUT_N, anchorsNum, ANCHOR_SIZE};
+     int reduceMaxResDims[] = {INPUT_N, 1, anchorsNum};
+     int reduceArgResDims[] = {INPUT_N, 1, anchorsNum};
+     int mulResDims[] = {INPUT_N, 1, anchorsNum};
+     int bboxResDims[] = {INPUT_N, OUTPUT_BBOX_SIZE, anchorsNum}; // TODO: order not sure
+     int anchorsDeviceDims[] = {INPUT_N, ANCHOR_SIZE, anchorsNum};// TODO: order not sure
      Tensor *reduceMaxResTensor = createTensor(reduceMaxRes, 3, reduceMaxResDims);
      Tensor *reduceArgResTensor = createTensor(reduceArgRes, 3, reduceArgResDims);
      Tensor *mulResTensor = createTensor(mulRes, 3, mulResDims);
@@ -508,6 +508,7 @@ void APIToModel(unsigned int maxBatchSize, IHostMemory **convModelStream, IHostM
      builder->destroy();
 }
 
+// rearrange image data to [N, C, H, W] order
 float *prepareData(std::vector<std::string> &imageList, float *x_scales, float *y_scales)
 {
      std::vector<cv::Mat> images; // available images
@@ -539,32 +540,45 @@ float *prepareData(std::vector<std::string> &imageList, float *x_scales, float *
      return data;
 }
 
-float *prepareAnchors(const float *anchor_shape, int width, int height, int H, int W, int B)
+float *prepareAnchors(const float *anchor_shape, int width, int height, int N, int H, int W, int B)
 {
      assert(anchor_shape);
      float center_x[W], center_y[H];
-     float *anchors = new float[H * W * B * 4];
-     int i, j, k;
+     float anchors[4 * B * H * W];
+     // int i, j, k;
+     int i;
 
      for (i = 1; i <= W; i++)
           center_x[i-1] = i * width / (W + 1.0);
      for (i = 1; i <= H; i++)
           center_y[i-1] = i * height / (H + 1.0);
 
-     int w_vol = H * B * 4;
-     int h_vol = B * 4;
-     int b_vol = 4;
-     for (i = 0; i < W; i++) {
-          for (j = 0; j < H; j++) {
-               for (k = 0; k < B; k++) {
-                    anchors[i*w_vol+j*h_vol+k*b_vol] = center_x[i];
-                    anchors[i*w_vol+j*h_vol+k*b_vol+1] = center_y[j];
-                    anchors[i*w_vol+j*h_vol+k*b_vol+2] = anchor_shape[k*2];
-                    anchors[i*w_vol+j*h_vol+k*b_vol+3] = anchor_shape[k*2+1];
-               }
-          }
+     int a_vol = B * H * W;
+     int b_vol = H * W;
+     for (i = 0; i < a_vol; i++) {
+          anchors[i] = center_x[i % W];
+          anchors[a_vol + i] = center_y[i / W % H];
+          anchors[a_vol * 2 + i] = anchor_shape[i / b_vol * 2];
+          anchors[a_vol * 3 + i] = anchor_shape[i / b_vol * 2 + 1];
      }
-     return anchors;
+
+     // int w_vol = H * B * 4;
+     // int h_vol = B * 4;
+     // int b_vol = 4;
+     // for (i = 0; i < W; i++) {
+     //      for (j = 0; j < H; j++) {
+     //           for (k = 0; k < B; k++) {
+     //                anchors[i*w_vol+j*h_vol+k*b_vol] = center_x[i];
+     //                anchors[i*w_vol+j*h_vol+k*b_vol+1] = center_y[j];
+     //                anchors[i*w_vol+j*h_vol+k*b_vol+2] = anchor_shape[k*2];
+     //                anchors[i*w_vol+j*h_vol+k*b_vol+3] = anchor_shape[k*2+1];
+     //           }
+     //      }
+     // }
+
+     float *ret = (float *)repeatMem(anchors, sizeof(float)*4*B*H*W, N, H2H);
+     assert(ret);
+     return ret;
 }
 
 void detectionFilter(float *bboxes, float *classes, float *probs, int *keep, int num_probs, float nms_thresh, float prob_thresh)
@@ -618,7 +632,7 @@ int main(int argc, char** argv)
      float *x_scales = new float[imageList.size()];
      float *y_scales = new float[imageList.size()];
      float *data = prepareData(imageList, x_scales, y_scales);
-     float *anchors = prepareAnchors(ANCHOR_SHAPE, INPUT_W, INPUT_H, CONVOUT_H, CONVOUT_W, ANCHORS_PER_GRID);
+     float *anchors = prepareAnchors(ANCHOR_SHAPE, INPUT_W, INPUT_H, INPUT_N, CONVOUT_H, CONVOUT_W, ANCHORS_PER_GRID);
      float *outProbs = new float[INPUT_N * TOP_N_DETECTION];
      float *outClass = new float[INPUT_N * TOP_N_DETECTION];
      float *outBbox = new float[INPUT_N * TOP_N_DETECTION * OUTPUT_BBOX_SIZE];
