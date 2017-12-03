@@ -12,12 +12,14 @@ LIBPATHS    =-L"$(CUDA_INSTALL_DIR)/targets/$(TRIPLE)/$(CUDA_LIBDIR)" -L"/usr/lo
 COMMON_LIBS = -lcudnn -lcudart -lcudart_static `pkg-config --cflags --libs opencv` -std=c++11
 
 
-$(TARGET): test.o tensorUtil.o tensorCuda.o trtUtil.o
-	$(CC) -Wall -g test.o trtUtil.o tensorUtil.o tensorCuda.o -o testtrt $(INCPATHS) $(LIBPATHS) $(COMMON_LIBS)
+# $(TARGET): test.o tensorUtil.o tensorCuda.o trtUtil.o
+# 	$(CC) -Wall -g test.o trtUtil.o tensorUtil.o tensorCuda.o -o testtrt $(INCPATHS) $(LIBPATHS) $(COMMON_LIBS)
+$(TARGET): test.o tensorUtil.o tensorCuda.o
+	$(CC) -Wall -g test.o tensorUtil.o tensorCuda.o -o testtrt $(INCPATHS) $(LIBPATHS) $(COMMON_LIBS)
 test.o: test.cu tensorUtil.h tensorCuda.h
 	$(CUCC) -g -c test.cu $(INCPATHS) $(LIBPATHS) $(COMMON_LIBS)
-trtUtil.o: trtUtil.cpp trtUtil.h
-	$(CUCC) -c trtUtil.cpp $(INCPATHS) $(LIBPATHS) $(COMMON_LIBS)
+# trtUtil.o: trtUtil.cpp trtUtil.h
+# 	$(CUCC) -c trtUtil.cpp $(INCPATHS) $(LIBPATHS) $(COMMON_LIBS)
 tensorUtil.o: tensorUtil.cu tensorUtil.h tensorCuda.h
 	$(CUCC) -g -c tensorUtil.cu $(INCPATHS) $(LIBPATHS) $(COMMON_LIBS)
 tensorCuda.o: tensorCuda.cu tensorCuda.h

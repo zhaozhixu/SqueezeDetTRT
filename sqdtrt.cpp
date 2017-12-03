@@ -252,7 +252,8 @@ createInterpretEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
 
      auto class_tensor = network->addInput(CLASS_INPUT_NAME, dt, DimsCHW{OUTPUT_CLS_SIZE, 1, INPUT_N * CONVOUT_H * CONVOUT_W * CLASS_SLICE_C / OUTPUT_CLS_SIZE});
      assert(class_tensor != nullptr);
-     auto confidence_tensor = network->addInput(CONF_INPUT_NAME, dt, DimsNCHW{INPUT_N, 1, 1, CONVOUT_W * CONVOUT_H * ANCHORS_PER_GRID});
+     // auto confidence_tensor = network->addInput(CONF_INPUT_NAME, dt, DimsNCHW{INPUT_N, 1, 1, CONVOUT_W * CONVOUT_H * ANCHORS_PER_GRID});
+     auto confidence_tensor = network->addInput(CONF_INPUT_NAME, dt, DimsCHW{1, 1, INPUT_N * CONVOUT_W * CONVOUT_H * ANCHORS_PER_GRID});
      assert(confidence_tensor != nullptr);
 
      auto class_softmax = network->addSoftMax(*class_tensor);
@@ -324,9 +325,9 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      int classInputDims[] = {INPUT_N, CLASS_SLICE_C, CONVOUT_H, CONVOUT_W};
      int confInputDims[] = {INPUT_N, CONF_SLICE_C, CONVOUT_H, CONVOUT_W};
      int bboxInputDims[] = {INPUT_N, BBOX_SLICE_C, CONVOUT_H, CONVOUT_W};
-     int classOutputDims[] = {INPUT_N, OUTPUT_CLS_SIZE, anchorsNum}; // TODO: order not sure
+     int classOutputDims[] = {INPUT_N, OUTPUT_CLS_SIZE, anchorsNum};
      int confOutputDims[] = {INPUT_N, 1, anchorsNum};
-     int bboxOutputDims[] = {INPUT_N, OUTPUT_BBOX_SIZE, anchorsNum}; // TODO: order not sure
+     int bboxOutputDims[] = {INPUT_N, OUTPUT_BBOX_SIZE, anchorsNum};
      Tensor *convoutTensor = createTensor((float *)convBuffers[convoutIndex], 4, convout_dims);
      Tensor *classInputTensor = createTensor((float *)interpretBuffers[classInputIndex], 4, classInputDims);
      Tensor *confInputTensor = createTensor((float *)interpretBuffers[confInputIndex], 4, confInputDims);
@@ -359,8 +360,8 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      int reduceMaxResDims[] = {INPUT_N, 1, anchorsNum};
      int reduceArgResDims[] = {INPUT_N, 1, anchorsNum};
      int mulResDims[] = {INPUT_N, 1, anchorsNum};
-     int bboxResDims[] = {INPUT_N, OUTPUT_BBOX_SIZE, anchorsNum}; // TODO: order not sure
-     int anchorsDeviceDims[] = {INPUT_N, ANCHOR_SIZE, anchorsNum};// TODO: order not sure
+     int bboxResDims[] = {INPUT_N, OUTPUT_BBOX_SIZE, anchorsNum};
+     int anchorsDeviceDims[] = {INPUT_N, ANCHOR_SIZE, anchorsNum};
      Tensor *reduceMaxResTensor = createTensor(reduceMaxRes, 3, reduceMaxResDims);
      Tensor *reduceArgResTensor = createTensor(reduceArgRes, 3, reduceArgResDims);
      Tensor *mulResTensor = createTensor(mulRes, 3, mulResDims);
@@ -372,6 +373,7 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      for (int i = 0; i < batchSize * anchorsNum; i++)
           orderHost[i] = i;
      orderDevice = (int *)cloneMem(orderHost, batchSize * anchorsNum * sizeof(int), H2D);
+
      float  *finalClass, *finalProbs, *finalBbox;
      size_t finalClassSize = batchSize * TOP_N_DETECTION * sizeof(float);
      size_t finalProbsSize = batchSize * TOP_N_DETECTION * sizeof(float);
@@ -379,6 +381,12 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      CHECK(cudaMalloc(&finalClass, finalClassSize));
      CHECK(cudaMalloc(&finalProbs, finalProbsSize));
      CHECK(cudaMalloc(&finalBbox, finalBboxSize));
+     int finalClassDims[] = {INPUT_N, 1, TOP_N_DETECTION};
+     int finalProbsDims[] = {INPUT_N, 1, TOP_N_DETECTION};
+     int finalBboxDims[] = {INPUT_N, OUTPUT_BBOX_SIZE, TOP_N_DETECTION};
+     Tensor *finalClassTensor = createTensor(finalClass, 3, finalClassDims);
+     Tensor *finalProbsTensor = createTensor(finalProbs, 3, finalProbsDims);
+     Tensor *finalBboxTensor = createTensor(finalBbox, 3, finalBboxDims);
 
      cudaStream_t stream;
      CHECK(cudaStreamCreate(&stream));
@@ -398,7 +406,7 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      sliceTensorCuda(convoutTensor, confInputTensor, 1, CLASS_SLICE_C, CONF_SLICE_C);
      sliceTensorCuda(convoutTensor, bboxInputTensor, 1, CLASS_SLICE_C + CONF_SLICE_C, BBOX_SLICE_C);
      interpretContext.enqueue(batchSize, interpretBuffers, stream, nullptr);
-     reduceArgMax(classOutputTensor, reduceMaxResTensor, reduceArgResTensor, 2);
+     reduceArgMax(classOutputTensor, reduceMaxResTensor, reduceArgResTensor, 1);
      multiplyElement(reduceMaxResTensor, confOutputTensor, mulResTensor);
      transformBboxSQD(bboxOutputTensor, anchorsDeviceTensor, bboxResTensor, INPUT_W, INPUT_H, xScalesDevice, yScalesDevice);
 
@@ -424,36 +432,21 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      tensorIndexSort(mulResTensorCopy, orderDevice);
      pickElements(mulResTensor->data, finalProbs, 1, orderDevice, TOP_N_DETECTION);
      pickElements(reduceArgResTensor->data, finalClass, 1, orderDevice, TOP_N_DETECTION);
-     pickElements(bboxResTensor->data, finalBbox, OUTPUT_BBOX_SIZE, orderDevice, TOP_N_DETECTION);
+     // pickElements(bboxResTensor->data, finalBbox, OUTPUT_BBOX_SIZE, orderDevice, TOP_N_DETECTION);
+     // pick xmin, ymin, xmax, ymax from bboxResTensor respectively
+     pickElements(bboxResTensor->data, finalBbox, 1, orderDevice, TOP_N_DETECTION);
+     pickElements(bboxResTensor->data + anchor_num, finalBbox + TOP_N_DETECTION, 1, orderDevice, TOP_N_DETECTION);
+     pickElements(bboxResTensor->data + 2 * anchor_num, finalBbox + 2 * TOP_N_DETECTION, 1, orderDevice, TOP_N_DETECTION);
+     pickElements(bboxResTensor->data + 3 * anchor_num, finalBbox + 3 * TOP_N_DETECTION, 1, orderDevice, TOP_N_DETECTION);
 
      FILE * sort_file = fopen("sort.txt", "w");
      int *orderHost2 = (int *)cloneMem(orderDevice, anchorsNum * sizeof(int), D2H);
      for (int i = 0; i < anchorsNum; i++)
           fprintf(sort_file, "%d\n", orderHost2[i]);
      fclose(sort_file);
-     FILE * finalProbs_file = fopen("finalProbs.txt", "w");
-     float *finalProbs_host = (float *)cloneMem(finalProbs, TOP_N_DETECTION * sizeof(float), D2H);
-     for (int i = 0; i < TOP_N_DETECTION; i++)
-          fprintf(finalProbs_file, "%f\n", finalProbs_host[i]);
-     fclose(finalProbs_file);
-
-     // Tensor *mulResHost = cloneTensor(mulResTensor, D2H);
-     // float *finalProbs2 = (float *)malloc(TOP_N_DETECTION * sizeof(float));
-     // pickElements(mulResHost->data, finalProbs2, 1, orderHost2, TOP_N_DETECTION);
-     // int len = TOP_N_DETECTION, stride = 1;
-     // for (int i = 0; i < len; i++) {
-     //      for (int j = 0; j < stride; j++) {
-     //           fprintf(stderr, "i: %d j: %d idx[i]: %d src[idx[i]]: %.2f",
-     //                   i, j, orderHost2[i], mulResHost->data[orderHost2[i]]);
-     //           fprintf(stderr, "\n");
-     //           finalProbs2[i*stride+j] = mulResHost->data[orderHost2[i]*stride+j];
-     //      }
-     // }
-     // FILE * finalProbs2_file = fopen("finalProbs2.txt", "w");
-     // for (int i = 0; i < TOP_N_DETECTION; i++)
-     //      fprintf(finalProbs2_file, "%f\n", finalProbs2[i]);
-     // fclose(finalProbs2_file);
-     // exit(1);
+     saveDeviceTensor("data/finalClassTensor.txt", finalClassTensor, "%f");
+     saveDeviceTensor("data/finalProbsTensor.txt" finalProbsTensor, "%f");
+     saveDeviceTensor("data/finalBboxTensor.txt", finalBboxTensor, "%f");
 
      CHECK(cudaMemcpyAsync(outProbs, finalProbs, finalProbsSize, cudaMemcpyDeviceToHost, stream));
      CHECK(cudaMemcpyAsync(outClass, finalClass, finalClassSize, cudaMemcpyDeviceToHost, stream));

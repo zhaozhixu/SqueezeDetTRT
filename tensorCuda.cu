@@ -68,16 +68,16 @@ __global__ void transformBboxSQDKernel(float *delta, float *anchor, float *res, 
      float cy = a[1] + d[1] * a[3] / y_scale;
      float w = a[2] * (d[2] < 1 ? expf(d[2]) : d[2] * E) / x_scale;
      float h = a[3] * (d[3] < 1 ? expf(d[3]) : d[3] * E) / y_scale;
-     res[si] = min(max(cx - w * 0.5, 0), img_width - 1);
-     res[si+anchor_num] = min(max(cy - h * 0.5, 0), img_height - 1);
-     res[si+2*anchor_num] = max(min(cx + w * 0.5, img_width - 1), 0);
-     res[si+3*anchor_num] = max(min(cy + h * 0.5, img_height - 1), 0);
+     res[di] = min(max(cx - w * 0.5, 0), img_width - 1);
+     res[di+anchor_num] = min(max(cy - h * 0.5, 0), img_height - 1);
+     res[di+2*anchor_num] = max(min(cx + w * 0.5, img_width - 1), 0);
+     res[di+3*anchor_num] = max(min(cy + h * 0.5, img_height - 1), 0);
 }
 
-__global__ void pickElementsKernel(float *src, float *dst, int *idx, int len, int stride, int block_size)
+__global__ void pickElementsKernel(float *src, float *dst, int *idx, int stride, int block_size, int total)
 {
      int di = blockIdx.x * block_size + threadIdx.x;
-     if (di >= len)
+     if (di >= total)
           return;
      int si = idx[di];
      for (int i = 0; i < stride; i++)

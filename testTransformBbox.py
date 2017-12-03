@@ -26,14 +26,14 @@ def transformBbox(a, d):
 
 delta_data = np.zeros(24)
 anchor_data = np.zeros(24)
-for i in range(0, 23):
-    delta_data[i] = i * 0.1
-    anchor_data[i] = i * 0.1
+for i in range(0, 24):
+    delta_data[23-i] = i
+    anchor_data[23-i] = i
 
 delta = np.reshape(delta_data, [1, 4, 6])
 anchor = np.reshape(anchor_data, [1, 4, 6])
 
-for i in range(0, 5):
+for i in range(0, 6):
     d = delta[:, :, i]
     a = anchor[:, :, i]
     print transformBbox(a, d)

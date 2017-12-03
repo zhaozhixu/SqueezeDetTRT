@@ -3,7 +3,7 @@
 #include <thrust/sort.h>
 #include <thrust/execution_policy.h>
 #include "tensorUtil.h"
-#include "trtUtil.h"
+/* #include "trtUtil.h" */
 
 clock_t start, end;
 Tensor *t, *tcuda;
@@ -121,7 +121,7 @@ void testTransformBboxSQD()
 {
      float *delta_host_data = (float *)malloc(sizeof(float) * 24);
      for (int i = 0; i < 24; i++)
-          delta_host_data[i] = i * 0.1;
+          delta_host_data[23-i] = i;
      float *anchor_host_data = (float *)cloneMem(delta_host_data, sizeof(float) * 24, H2H);
      float *delta_cuda_data = (float *)cloneMem(delta_host_data, sizeof(float) * 24, H2D);
      float *anchor_cuda_data = (float *)cloneMem(anchor_host_data, sizeof(float) * 24, H2D);
@@ -251,17 +251,17 @@ void findThrustBug()
      fclose(outfile);
 }
 
-void testOpencv()
-{
-     std::vector<std::string> imglist = getImageList("data/example");
-     /* cv::Mat img = readImage(imglist.begin(), 1248, 768); */
-     std::string filename = imglist[0];
-     printf("filename: %s\n", filename.c_str());
+/* void testOpencv() */
+/* { */
+/*      std::vector<std::string> imglist = getImageList("data/example"); */
+/*      /\* cv::Mat img = readImage(imglist.begin(), 1248, 768); *\/ */
+/*      std::string filename = imglist[0]; */
+/*      printf("filename: %s\n", filename.c_str()); */
 
-     cv::Mat img = cv::imread(filename);
-     printf("img.total(): %ld\n", img.total());
-     cv::resize(img, img, cv::Size(1248, 384));
-}
+/*      cv::Mat img = cv::imread(filename); */
+/*      printf("img.total(): %ld\n", img.total()); */
+/*      cv::resize(img, img, cv::Size(1248, 384)); */
+/* } */
 
 void testIou()
 {
@@ -300,7 +300,7 @@ int main(int argc, char *argv[])
      init();
      /* testSliceTensor(); */
      /* testReshapeTensor(); */
-     /* testReduceArgMax(); */
+     testReduceArgMax();
      /* testMultiplyElement(); */
      testTransformBboxSQD();
      /* testAnchor(); */
