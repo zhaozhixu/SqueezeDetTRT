@@ -1,6 +1,10 @@
 #ifndef _TENSOR_UTIL_H_
 #define _TENSOR_UTIL_H_
 
+typedef enum MallocKind {
+     HOST, DEVICE
+} MallocKind;
+
 typedef enum CloneKind {
      H2H, H2D, D2D, D2H
 } CloneKind;
@@ -21,6 +25,7 @@ Tensor *cloneTensor(const Tensor *src, CloneKind kind);
 void *repeatMem(void *data, size_t size, int times, CloneKind kind);
 int computeLength(int ndim, const int *dims);
 Tensor *createTensor(float *data, int ndim, const int *dims);
+Tensor *mallocTensor(int ndim, const int* dims, const MallocKind mkind);
 
 void fprintTensor(FILE *stream, const Tensor *tensor, const char *fmt);
 void printTensor(const Tensor *tensor, const char *fmt);
@@ -31,8 +36,8 @@ void saveDeviceTensor(const char *file_name, const Tensor *d_tensor, const char 
 
 Tensor *createSlicedTensor(const Tensor *src, int dim, int start, int len);
 Tensor *sliceTensor(const Tensor *src, Tensor *dst, int dim, int start, int len);
-Tensor *creatSlicedTensorCuda(const Tensor *src, int dim, int start, int len);
-void *sliceTensorCuda(const Tensor *src, Tensor *dst, int dim, int start, int len);
+/* Tensor *creatSlicedTensorCuda(const Tensor *src, int dim, int start, int len); */
+/* void *sliceTensorCuda(const Tensor *src, Tensor *dst, int dim, int start, int len); */
 Tensor *reshapeTensor(const Tensor *src, int newNdim, const int *newDims);
 Tensor *createReducedTensor(const Tensor *src, int dim);
 void *reduceArgMax(const Tensor *src, Tensor *dst, Tensor *arg, int dim);

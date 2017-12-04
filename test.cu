@@ -1,5 +1,6 @@
 #include <time.h>
 #include <stdio.h>
+#include <string.h>
 #include <thrust/sort.h>
 #include <thrust/execution_policy.h>
 #include "tensorUtil.h"
@@ -45,19 +46,19 @@ void init()
 void testSliceTensor()
 {
      /* Tensor *st = createSlicedTensor(t, 2, 2, 1800); */
-     Tensor *st = createSlicedTensor(t, 1, 0, 2);
-     start = clock();
+     /* Tensor *st = createSlicedTensor(t, 1, 0, 2); */
+     /* start = clock(); */
      /* sliceTensor(t, st, 2, 2, 1800); */
-     sliceTensor(t, st, 1, 0, 2);
-     end = clock();
-     printf("sliceTensor in %ld\n", end - start);
-     printTensor(st, "%.2f");
+     /* sliceTensor(t, st, 1, 0, 2); */
+     /* end = clock(); */
+     /* printf("sliceTensor in %ld\n", end - start); */
+     /* printTensor(st, "%.2f"); */
 
      /* Tensor *stcuda = creatSlicedTensorCuda(tcuda, 2, 2, 1800); */
-     Tensor *stcuda = creatSlicedTensorCuda(tcuda, 1, 0, 2);
+     Tensor *stcuda = createSlicedTensor(tcuda, 1, 0, 2);
      start = clock();
      /* sliceTensorCuda(tcuda, stcuda, 2, 2, 1800); */
-     sliceTensorCuda(tcuda, stcuda, 1, 0, 2);
+     sliceTensor(tcuda, stcuda, 1, 0, 2);
      end = clock();
      printf("sliceTensorCuda in %ld\n", end - start);
      float *sthost_data = (float *)cloneMem(stcuda->data, stcuda->len * sizeof(float), D2H);
@@ -318,9 +319,21 @@ void testIsMemHost()
      printf("%d\n", isHostMem(h));
 }
 
+void testMallocTensor()
+{
+     Tensor *ht = mallocTensor(ndim, dims, HOST);
+     memmove(ht->data, data, ht->len * sizeof(float));
+
+     Tensor *dt = mallocTensor(ndim, dims, DEVICE);
+     cudaMemcpy(dt->data, data, dt->len * sizeof(float), cudaMemcpyHostToDevice);
+
+     printTensor(ht, "%.2f");
+     printDeviceTensor(dt, "%.2f");
+}
+
 int main(int argc, char *argv[])
 {
-     /* init(); */
+     init();
      /* testSliceTensor(); */
      /* testReshapeTensor(); */
      /* testReduceArgMax(); */
@@ -332,6 +345,7 @@ int main(int argc, char *argv[])
      /* testOpencv(); */
      /* testIou(); */
      /* testPickElements(); */
-     testIsMemDevice();
-     testIsMemHost();
+     /* testIsMemDevice(); */
+     /* testIsMemHost(); */
+     testMallocTensor();
 }

@@ -141,11 +141,14 @@ void *repeatMem(void *data, size_t size, int times, CloneKind kind)
 
 int computeLength(int ndim, const int *dims)
 {
-     assert(dims);
-     int i, len = 1;
-     for (i = 0; i < ndim; i++)
-          len *= dims[i];
-     return len;
+     if (dims) {
+          int i, len = 1;
+          for (i = 0; i < ndim; i++)
+               len *= dims[i];
+          return len;
+     }
+     fprintf(stderr, "Warning: null dims in computeLength\n");
+     return 0;
 }
 
 Tensor *createTensor(float *data, int ndim, const int *dims)
@@ -156,6 +159,29 @@ Tensor *createTensor(float *data, int ndim, const int *dims)
      t->dims = (int *)malloc(sizeof(int) * ndim);
      memmove(t->dims, dims, sizeof(int) * ndim);
      t->len = computeLength(ndim, dims);
+     return t;
+}
+
+Tensor *mallocTensor(int ndim, const int* dims, const MallocKind mkind)
+{
+     Tensor *t = createTensor(NULL, ndim, dims);
+     float *f;
+
+     switch (mkind) {
+     case HOST:
+          f = (float *)malloc(t->len * sizeof(float));
+          assert(f);
+          break;
+     case DEVICE:
+          cudaMalloc(&f, t->len * sizeof(float));
+          assert(f);
+          break;
+     default:
+          fprintf(stderr, "unknown MallocKind %d\n", mkind);
+          return NULL;
+     }
+
+     t->data = f;
      return t;
 }
 
@@ -217,6 +243,13 @@ void printTensor(const Tensor *tensor, const char *fmt)
      fprintTensor(stdout, tensor, fmt);
 }
 
+void saveTensor(const char *file_name, const Tensor *tensor, const char *fmt)
+{
+     FILE *fp = fopen(file_name, "w");
+     fprintTensor(fp, tensor, fmt);
+     fclose(fp);
+}
+
 void fprintDeviceTensor(FILE *stream, const Tensor *d_tensor, const char *fmt)
 {
      assert(isTensorValid(d_tensor));
@@ -227,14 +260,7 @@ void fprintDeviceTensor(FILE *stream, const Tensor *d_tensor, const char *fmt)
 
 void printDeviceTensor(const Tensor *d_tensor, const char *fmt)
 {
-     fprintTensor(stdout, d_tensor, fmt);
-}
-
-void saveTensor(const char *file_name, const Tensor *tensor, const char *fmt)
-{
-     FILE *fp = fopen(file_name, "w");
-     fprintTensor(fp, tensor, fmt);
-     fclose(fp);
+     fprintDeviceTensor(stdout, d_tensor, fmt);
 }
 
 void saveDeviceTensor(const char *file_name, const Tensor *d_tensor, const char *fmt)
@@ -244,47 +270,47 @@ void saveDeviceTensor(const char *file_name, const Tensor *d_tensor, const char 
      fclose(fp);
 }
 
+/* Tensor *createSlicedTensor(const Tensor *src, int dim, int start, int len) */
+/* { */
+/*      assert(isTensorValid(src)); */
+/*      assert(dim <= src->ndim && dim >= 0); */
+/*      assert(len+start <= src->dims[dim]); */
+
+/*      Tensor *dst = (Tensor *)malloc(sizeof(Tensor)); /\* new tensor *\/ */
+/*      dst->ndim = src->ndim; */
+/*      dst->dims = (int *)malloc(sizeof(int) * dst->ndim); */
+/*      memmove(dst->dims, src->dims, sizeof(int) * dst->ndim); */
+/*      dst->dims[dim] = len; */
+/*      dst->len = src->len / src->dims[dim] * len; */
+/*      dst->data = (float *)malloc(dst->len * sizeof(float)); */
+/*      return dst; */
+/* } */
+
+/* Tensor *sliceTensor(const Tensor *src, Tensor *dst, int dim, int start, int len) */
+/* { */
+/*      assert(isTensorValid(src) && isTensorValid(dst)); */
+/*      assert(dst->ndim == src->ndim); */
+/*      for (int i = 0; i < dst->ndim; i++) */
+/*           assert(i == dim ? dst->dims[i] == len : dst->dims[i] == src->dims[i]); */
+
+/*      int i, block_size, block_num; /\* block size and number for copy operation *\/ */
+/*      for (i = dim+1, block_size = 1; i < dst->ndim; i++) */
+/*           block_size *= dst->dims[i]; */
+/*      for (i = 0, block_num = 1; i <= dim; i++) */
+/*           block_num *= dst->dims[i]; */
+
+/*      int index; */
+/*      float *dp = dst->data, *sp = src->data; */
+/*      size_t floats_size = block_size * sizeof(float); */
+/*      for (i = 0; i < block_num; i++) { */
+/*           index = i / len * src->dims[dim] + i % len + start; */
+/*           memmove(dp+i*block_size, sp+index*block_size, floats_size); */
+/*      } */
+
+/*      return dst; */
+/* } */
+
 Tensor *createSlicedTensor(const Tensor *src, int dim, int start, int len)
-{
-     assert(isTensorValid(src));
-     assert(dim <= src->ndim && dim >= 0);
-     assert(len+start <= src->dims[dim]);
-
-     Tensor *dst = (Tensor *)malloc(sizeof(Tensor)); /* new tensor */
-     dst->ndim = src->ndim;
-     dst->dims = (int *)malloc(sizeof(int) * dst->ndim);
-     memmove(dst->dims, src->dims, sizeof(int) * dst->ndim);
-     dst->dims[dim] = len;
-     dst->len = src->len / src->dims[dim] * len;
-     dst->data = (float *)malloc(dst->len * sizeof(float));
-     return dst;
-}
-
-Tensor *sliceTensor(const Tensor *src, Tensor *dst, int dim, int start, int len)
-{
-     assert(isTensorValid(src) && isTensorValid(dst));
-     assert(dst->ndim == src->ndim);
-     for (int i = 0; i < dst->ndim; i++)
-          assert(i == dim ? dst->dims[i] == len : dst->dims[i] == src->dims[i]);
-
-     int i, block_size, block_num; /* block size and number for copy operation */
-     for (i = dim+1, block_size = 1; i < dst->ndim; i++)
-          block_size *= dst->dims[i];
-     for (i = 0, block_num = 1; i <= dim; i++)
-          block_num *= dst->dims[i];
-
-     int index;
-     float *dp = dst->data, *sp = src->data;
-     size_t floats_size = block_size * sizeof(float);
-     for (i = 0; i < block_num; i++) {
-          index = i / len * src->dims[dim] + i % len + start;
-          memmove(dp+i*block_size, sp+index*block_size, floats_size);
-     }
-
-     return dst;
-}
-
-Tensor *creatSlicedTensorCuda(const Tensor *src, int dim, int start, int len)
 {
      assert(isTensorValid(src));
      assert(dim <= MAXDIM);
@@ -300,7 +326,7 @@ Tensor *creatSlicedTensorCuda(const Tensor *src, int dim, int start, int len)
      return dst;
 }
 
-void *sliceTensorCuda(const Tensor *src, Tensor *dst, int dim, int start, int len)
+Tensor *sliceTensor(const Tensor *src, Tensor *dst, int dim, int start, int len)
 {
      assert(isTensorValid(src) && isTensorValid(dst));
      assert(isDeviceMem(src->data) && isDeviceMem(dst->data));
