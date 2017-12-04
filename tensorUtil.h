@@ -14,6 +14,8 @@ typedef struct {
 
 int isTensorValid(const Tensor *tensor);
 int isShapeEqual(const Tensor *t1, const Tensor *t2);
+int isHostMem(const void *ptr);
+int isDeviceMem(const void *ptr);
 void *cloneMem(const void *src, size_t size, CloneKind kind);
 Tensor *cloneTensor(const Tensor *src, CloneKind kind);
 void *repeatMem(void *data, size_t size, int times, CloneKind kind);

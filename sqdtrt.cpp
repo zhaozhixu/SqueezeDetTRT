@@ -414,17 +414,17 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      cudaEventSynchronize(stop);
      cudaEventElapsedTime(&timeDetect, start, stop);
 
-     saveDeviceTensor("data/convoutTensor.txt", convoutTensor, "%f");
-     saveDeviceTensor("data/classInputTensor.txt", classInputTensor, "%f");
-     saveDeviceTensor("data/confInputTensor.txt", confInputTensor, "%f");
-     saveDeviceTensor("data/bboxInputTensor.txt", bboxInputTensor, "%f");
-     saveDeviceTensor("data/classOutputTensor.txt", classOutputTensor, "%f");
-     saveDeviceTensor("data/confOutputTensor.txt", confOutputTensor, "%f");
-     saveDeviceTensor("data/bboxOutputTensor.txt", bboxOutputTensor, "%f");
-     saveDeviceTensor("data/mulResTensor.txt", mulResTensor, "%f");
-     saveDeviceTensor("data/reduceMaxResTensor.txt", reduceMaxResTensor, "%f");
-     saveDeviceTensor("data/reduceArgResTensor.txt", reduceArgResTensor, "%f");
-     saveDeviceTensor("data/bboxResTensor.txt", bboxResTensor, "%f");
+     saveDeviceTensor("data/convoutTensor.txt", convoutTensor, "%7f");
+     saveDeviceTensor("data/classInputTensor.txt", classInputTensor, "%7f");
+     saveDeviceTensor("data/confInputTensor.txt", confInputTensor, "%7f");
+     saveDeviceTensor("data/bboxInputTensor.txt", bboxInputTensor, "%7f");
+     saveDeviceTensor("data/classOutputTensor.txt", classOutputTensor, "%7f");
+     saveDeviceTensor("data/confOutputTensor.txt", confOutputTensor, "%7f");
+     saveDeviceTensor("data/bboxOutputTensor.txt", bboxOutputTensor, "%7f");
+     saveDeviceTensor("data/mulResTensor.txt", mulResTensor, "%7f");
+     saveDeviceTensor("data/reduceMaxResTensor.txt", reduceMaxResTensor, "%7f");
+     saveDeviceTensor("data/reduceArgResTensor.txt", reduceArgResTensor, "%7f");
+     saveDeviceTensor("data/bboxResTensor.txt", bboxResTensor, "%7f");
 
      // filter top-n-detection
      // TODO: only batchSize = 1 supported
@@ -435,18 +435,18 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      // pickElements(bboxResTensor->data, finalBbox, OUTPUT_BBOX_SIZE, orderDevice, TOP_N_DETECTION);
      // pick xmin, ymin, xmax, ymax from bboxResTensor respectively
      pickElements(bboxResTensor->data, finalBbox, 1, orderDevice, TOP_N_DETECTION);
-     pickElements(bboxResTensor->data + anchor_num, finalBbox + TOP_N_DETECTION, 1, orderDevice, TOP_N_DETECTION);
-     pickElements(bboxResTensor->data + 2 * anchor_num, finalBbox + 2 * TOP_N_DETECTION, 1, orderDevice, TOP_N_DETECTION);
-     pickElements(bboxResTensor->data + 3 * anchor_num, finalBbox + 3 * TOP_N_DETECTION, 1, orderDevice, TOP_N_DETECTION);
+     pickElements(bboxResTensor->data + anchorsNum, finalBbox + TOP_N_DETECTION, 1, orderDevice, TOP_N_DETECTION);
+     pickElements(bboxResTensor->data + 2 * anchorsNum, finalBbox + 2 * TOP_N_DETECTION, 1, orderDevice, TOP_N_DETECTION);
+     pickElements(bboxResTensor->data + 3 * anchorsNum, finalBbox + 3 * TOP_N_DETECTION, 1, orderDevice, TOP_N_DETECTION);
 
      FILE * sort_file = fopen("sort.txt", "w");
      int *orderHost2 = (int *)cloneMem(orderDevice, anchorsNum * sizeof(int), D2H);
      for (int i = 0; i < anchorsNum; i++)
           fprintf(sort_file, "%d\n", orderHost2[i]);
      fclose(sort_file);
-     saveDeviceTensor("data/finalClassTensor.txt", finalClassTensor, "%f");
-     saveDeviceTensor("data/finalProbsTensor.txt" finalProbsTensor, "%f");
-     saveDeviceTensor("data/finalBboxTensor.txt", finalBboxTensor, "%f");
+     saveDeviceTensor("data/finalClassTensor.txt", finalClassTensor, "%7f");
+     saveDeviceTensor("data/finalProbsTensor.txt", finalProbsTensor, "%7f");
+     saveDeviceTensor("data/finalBboxTensor.txt", finalBboxTensor, "%7f");
 
      CHECK(cudaMemcpyAsync(outProbs, finalProbs, finalProbsSize, cudaMemcpyDeviceToHost, stream));
      CHECK(cudaMemcpyAsync(outClass, finalClass, finalClassSize, cudaMemcpyDeviceToHost, stream));

@@ -41,6 +41,21 @@ int isShapeEqual(const Tensor *t1, const Tensor *t2)
      return 0;
 }
 
+/* can only identify host memory alloced by cudaMallocHost, etc */
+int isHostMem(const void *ptr)
+{
+     cudaPointerAttributes attributes;
+     cudaPointerGetAttributes(&attributes, ptr);
+     return attributes.memoryType == cudaMemoryTypeHost;
+}
+
+int isDeviceMem(const void *ptr)
+{
+     cudaPointerAttributes attributes;
+     cudaPointerGetAttributes(&attributes, ptr);
+     return attributes.memoryType == cudaMemoryTypeDevice;
+}
+
 void *cloneMem(const void *src, size_t size, CloneKind kind)
 {
      assert(src);
@@ -57,11 +72,13 @@ void *cloneMem(const void *src, size_t size, CloneKind kind)
           cudaMemcpy(p, src, size, cudaMemcpyHostToDevice);
           return p;
      case D2D:
+          assert(isDeviceMem(src));
           cudaMalloc(&p, size);
           assert(p);
           cudaMemcpy(p, src, size, cudaMemcpyDeviceToDevice);
           return p;
      case D2H:
+          assert(isDeviceMem(src));
           p = malloc(size);
           assert(p);
           cudaMemcpy(p, src, size, cudaMemcpyDeviceToHost);
@@ -101,6 +118,7 @@ void *repeatMem(void *data, size_t size, int times, CloneKind kind)
                cudaMemcpy(p, data, size, cudaMemcpyHostToDevice);
           return dst;
      case D2D:
+          assert(isDeviceMem(data));
           cudaMalloc(&p, size * times);
           dst = p;
           assert(p);
@@ -108,6 +126,7 @@ void *repeatMem(void *data, size_t size, int times, CloneKind kind)
                cudaMemcpy(p, data, size, cudaMemcpyDeviceToDevice);
           return dst;
      case D2H:
+          assert(isDeviceMem(data));
           dst = p = malloc(size * times);
           assert(p);
           for (i = 0; i < times; i++, p = (char *)p + size * times)
@@ -203,7 +222,7 @@ void fprintDeviceTensor(FILE *stream, const Tensor *d_tensor, const char *fmt)
      assert(isTensorValid(d_tensor));
      Tensor *h_tensor = cloneTensor(d_tensor, D2H);
      fprintTensor(stream, h_tensor, fmt);
-     free(h_tensor->data);
+     free(h_tensor->data); /* TODO: free t_tensor */
 }
 
 void printDeviceTensor(const Tensor *d_tensor, const char *fmt)
@@ -227,7 +246,7 @@ void saveDeviceTensor(const char *file_name, const Tensor *d_tensor, const char 
 
 Tensor *createSlicedTensor(const Tensor *src, int dim, int start, int len)
 {
-     assertTensor(src);
+     assert(isTensorValid(src));
      assert(dim <= src->ndim && dim >= 0);
      assert(len+start <= src->dims[dim]);
 
@@ -243,8 +262,7 @@ Tensor *createSlicedTensor(const Tensor *src, int dim, int start, int len)
 
 Tensor *sliceTensor(const Tensor *src, Tensor *dst, int dim, int start, int len)
 {
-     assertTensor(src);
-     assertTensor(dst);
+     assert(isTensorValid(src) && isTensorValid(dst));
      assert(dst->ndim == src->ndim);
      for (int i = 0; i < dst->ndim; i++)
           assert(i == dim ? dst->dims[i] == len : dst->dims[i] == src->dims[i]);
@@ -268,7 +286,7 @@ Tensor *sliceTensor(const Tensor *src, Tensor *dst, int dim, int start, int len)
 
 Tensor *creatSlicedTensorCuda(const Tensor *src, int dim, int start, int len)
 {
-     assertTensor(src);
+     assert(isTensorValid(src));
      assert(dim <= MAXDIM);
      assert(len+start <= src->dims[dim]);
 
@@ -284,8 +302,8 @@ Tensor *creatSlicedTensorCuda(const Tensor *src, int dim, int start, int len)
 
 void *sliceTensorCuda(const Tensor *src, Tensor *dst, int dim, int start, int len)
 {
-     assertTensor(src);
-     assertTensor(dst);
+     assert(isTensorValid(src) && isTensorValid(dst));
+     assert(isDeviceMem(src->data) && isDeviceMem(dst->data));
      assert(dst->ndim == src->ndim);
      for (int i = 0; i < dst->ndim; i++)
           assert(i == dim ? dst->dims[i] == len : dst->dims[i] == src->dims[i]);
@@ -304,7 +322,7 @@ void *sliceTensorCuda(const Tensor *src, Tensor *dst, int dim, int start, int le
 /* in-place reshape tensor */
 Tensor *reshapeTensor(const Tensor *src, int newNdim, const int *newDims)
 {
-     assertTensor(src);
+     assert(isTensorValid(src));
      assert(newDims);
      assert(src->len == computeLength(newNdim, newDims));
      Tensor *dst = createTensor(src->data, newNdim, newDims); /* new tensor */
@@ -313,7 +331,7 @@ Tensor *reshapeTensor(const Tensor *src, int newNdim, const int *newDims)
 
 Tensor *createReducedTensor(const Tensor *src, int dim)
 {
-     assertTensor(src);
+     assert(isTensorValid(src));
      assert(dim < src->ndim && dim >= 0);
 
      Tensor *dst = (Tensor *)malloc(sizeof(Tensor));
@@ -328,9 +346,8 @@ Tensor *createReducedTensor(const Tensor *src, int dim)
 
 void *reduceArgMax(const Tensor *src, Tensor *dst, Tensor *arg, int dim)
 {
-     assertTensor(src);
-     assertTensor(dst);
-     assertTensor(arg);
+     assert(isTensorValid(src) && isTensorValid(dst) && isTensorValid(arg));
+     assert(isDeviceMem(src->data) && isDeviceMem(dst->data) && isDeviceMem(arg->data));
      assert(dim < src->ndim && dim >= 0);
      for (int i = 0; i < dst->ndim; i++)
           assert(i == dim ? dst->dims[i] == 1 : dst->dims[i] == src->dims[i] &&
@@ -356,6 +373,7 @@ Tensor *multiplyElement(const Tensor *src1, const Tensor *src2, Tensor *dst)
 {
      assert(isShapeEqual(src1, src2));
      assert(isShapeEqual(src1, dst));
+     assert(isDeviceMem(src1->data) && isDeviceMem(src2->data) && isDeviceMem(dst->data));
 
      int thread_num, block_size, block_num;
      thread_num = dst->len;
@@ -376,6 +394,8 @@ Tensor *transformBboxSQD(const Tensor *delta, const Tensor *anchor, Tensor *res,
      assert(isShapeEqual(delta, res));
      assert(delta->ndim == 3);
      assert(delta->dims[1] == 4);
+     assert(isDeviceMem(delta->data) && isDeviceMem(anchor->data) && isDeviceMem(res->data));
+     assert(isDeviceMem(x_scales) && isDeviceMem(y_scales));
 
      /* take 4 elements from each of delta and anchor,
         and put 4 result elements to res in one thread */
@@ -391,8 +411,9 @@ Tensor *transformBboxSQD(const Tensor *delta, const Tensor *anchor, Tensor *res,
 
 void tensorIndexSort(Tensor *src, int *idx)
 {
-     assertTensor(src);
+     assert(isTensorValid(src));
      assert(idx);
+     assert(isDeviceMem(src->data) && isDeviceMem(idx));
 
      /* the thrust call below can be unreliable, sometimes produces error */
      /* now it works with compilation flag -arch=sm_35 */
@@ -403,6 +424,7 @@ void tensorIndexSort(Tensor *src, int *idx)
 void pickElements(float *src, float *dst, int stride, int *idx, int len)
 {
      assert(src && dst && idx);
+     assert(isDeviceMem(src) && isDeviceMem(dst) && isDeviceMem(idx));
 
      int thread_num, block_size, block_num;
      thread_num = len;

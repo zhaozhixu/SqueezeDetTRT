@@ -9,8 +9,8 @@ clock_t start, end;
 Tensor *t, *tcuda;
 float *tcuda_data;
 
-int ndim = 3;
-int dims[] = {3, 2, 3};
+int ndim = 4;
+int dims[] = {1, 3, 2, 3};
 float data[] = {0.0, 1.0, 2.0, 3.0,
                 4.0, 5.0, 6.0, 7.0,
                 8.0, 9.0, 10.0, 11.0,
@@ -45,19 +45,19 @@ void init()
 void testSliceTensor()
 {
      /* Tensor *st = createSlicedTensor(t, 2, 2, 1800); */
-     Tensor *st = createSlicedTensor(t, 2, 1, 2);
+     Tensor *st = createSlicedTensor(t, 1, 0, 2);
      start = clock();
      /* sliceTensor(t, st, 2, 2, 1800); */
-     sliceTensor(t, st, 2, 1, 2);
+     sliceTensor(t, st, 1, 0, 2);
      end = clock();
      printf("sliceTensor in %ld\n", end - start);
      printTensor(st, "%.2f");
 
      /* Tensor *stcuda = creatSlicedTensorCuda(tcuda, 2, 2, 1800); */
-     Tensor *stcuda = creatSlicedTensorCuda(tcuda, 2, 1, 2);
+     Tensor *stcuda = creatSlicedTensorCuda(tcuda, 1, 0, 2);
      start = clock();
      /* sliceTensorCuda(tcuda, stcuda, 2, 2, 1800); */
-     sliceTensorCuda(tcuda, stcuda, 2, 1, 2);
+     sliceTensorCuda(tcuda, stcuda, 1, 0, 2);
      end = clock();
      printf("sliceTensorCuda in %ld\n", end - start);
      float *sthost_data = (float *)cloneMem(stcuda->data, stcuda->len * sizeof(float), D2H);
@@ -295,18 +295,43 @@ void testPickElements()
      printf("\n");
 }
 
+void testIsMemDevice()
+{
+     float *d;
+     cudaMalloc(&d, sizeof(float));
+     printf("%d\n", isDeviceMem(d));
+
+     float *h;
+     h = (float *)malloc(sizeof(float));
+     printf("%d\n", isDeviceMem(h));
+}
+
+void testIsMemHost()
+{
+     float *d;
+     cudaMalloc(&d, sizeof(float));
+     printf("%d\n", isHostMem(d));
+
+     float *h;
+     /* h = (float *)malloc(sizeof(float)); */
+     cudaMallocHost(&h, sizeof(float));
+     printf("%d\n", isHostMem(h));
+}
+
 int main(int argc, char *argv[])
 {
-     init();
+     /* init(); */
      /* testSliceTensor(); */
      /* testReshapeTensor(); */
-     testReduceArgMax();
+     /* testReduceArgMax(); */
      /* testMultiplyElement(); */
-     testTransformBboxSQD();
+     /* testTransformBboxSQD(); */
      /* testAnchor(); */
      /* testThrustSort(); */
      /* findThrustBug(); */
      /* testOpencv(); */
      /* testIou(); */
      /* testPickElements(); */
+     testIsMemDevice();
+     testIsMemHost();
 }
