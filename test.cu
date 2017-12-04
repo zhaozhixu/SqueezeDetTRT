@@ -60,10 +60,8 @@ void testSliceTensor()
      /* sliceTensorCuda(tcuda, stcuda, 2, 2, 1800); */
      sliceTensor(tcuda, stcuda, 1, 0, 2);
      end = clock();
-     printf("sliceTensorCuda in %ld\n", end - start);
-     float *sthost_data = (float *)cloneMem(stcuda->data, stcuda->len * sizeof(float), D2H);
-     Tensor *sthost = createTensor(sthost_data, stcuda->ndim, stcuda->dims);
-     printTensor(sthost, "%.2f");
+     printf("sliceTensor in %ld\n", end - start);
+     printDeviceTensor(stcuda, "%f");
 }
 
 void testReshapeTensor()
@@ -331,10 +329,89 @@ void testMallocTensor()
      printDeviceTensor(dt, "%.2f");
 }
 
+void testFindSliceBug0()
+{
+     const int INPUT_N = 1;
+     const int CONVOUT_C = 72;
+     const int CONVOUT_H = 24;
+     const int CONVOUT_W = 78;
+     const int CLASS_SLICE_C = 27;
+     const int CONF_SLICE_C = 9;
+     const int BBOX_SLICE_C = 36;
+
+     int convout_size = INPUT_N * CONVOUT_C * CONVOUT_H * CONVOUT_W;
+     float convout[convout_size];
+     /* FILE *convout_file; */
+     /* convout_file = fopen("data/convoutTensorFloat.txt", "r"); */
+     /* float f; */
+     for (int i = 0; i < convout_size; i++) {
+          /* fscanf(convout_file, "%f", &f); */
+          /* convout[i] = f; */
+          convout[i] = i;
+     }
+     /* fclose(convout_file); */
+     int convout_dims[] = {INPUT_N, CONVOUT_H, CONVOUT_W, CONVOUT_C};
+     Tensor *convoutHostTensor = createTensor(convout, 4, convout_dims);
+
+     Tensor *convoutTensor = cloneTensor(convoutHostTensor, H2D);
+     Tensor *classInputTensor = createSlicedTensor(convoutTensor, 3, 0, CLASS_SLICE_C);
+     Tensor *confInputTensor = createSlicedTensor(convoutTensor, 3, CLASS_SLICE_C, CONF_SLICE_C);
+     Tensor *bboxInputTensor = createSlicedTensor(convoutTensor, 3, CLASS_SLICE_C + CONF_SLICE_C, BBOX_SLICE_C);
+
+     sliceTensor(convoutTensor, classInputTensor, 3, 0, CLASS_SLICE_C);
+     sliceTensor(convoutTensor, confInputTensor, 3, CLASS_SLICE_C, CONF_SLICE_C);
+     sliceTensor(convoutTensor, bboxInputTensor, 3, CLASS_SLICE_C + CONF_SLICE_C, BBOX_SLICE_C);
+     /* saveDeviceTensor("data/convoutTensorDebug.txt", convoutTensor, "%7f"); */
+     /* saveDeviceTensor("data/classInputTensorDebug.txt", classInputTensor, "%7f"); */
+     /* saveDeviceTensor("data/confInputTensorDebug.txt", confInputTensor, "%7f"); */
+     /* saveDeviceTensor("data/bboxInputTensorDebug.txt", bboxInputTensor, "%7f"); */
+     saveDeviceTensor("data/convoutTensorDebug0.txt", convoutTensor, "%f");
+     saveDeviceTensor("data/classInputTensorDebug0.txt", classInputTensor, "%f");
+     saveDeviceTensor("data/confInputTensorDebug0.txt", confInputTensor, "%f");
+     saveDeviceTensor("data/bboxInputTensorDebug0.txt", bboxInputTensor, "%f");
+}
+
+void testFindSliceBug()
+{
+     const int INPUT_N = 1;
+     const int CONVOUT_C = 72;
+     const int CONVOUT_H = 24;
+     const int CONVOUT_W = 78;
+     const int CLASS_SLICE_C = 27;
+     const int CONF_SLICE_C = 9;
+     const int BBOX_SLICE_C = 36;
+
+     int convout_size = INPUT_N * CONVOUT_C * CONVOUT_H * CONVOUT_W;
+     float convout[convout_size];
+     FILE *convout_file;
+     convout_file = fopen("data/convoutTensorFloat.txt", "r");
+     float f;
+     for (int i = 0; i < convout_size; i++) {
+          fscanf(convout_file, "%f", &f);
+          convout[i] = f;
+     }
+     fclose(convout_file);
+     int convout_dims[] = {INPUT_N, CONVOUT_C, CONVOUT_H, CONVOUT_W};
+     Tensor *convoutHostTensor = createTensor(convout, 4, convout_dims);
+
+     Tensor *convoutTensor = cloneTensor(convoutHostTensor, H2D);
+     Tensor *classInputTensor = createSlicedTensor(convoutTensor, 1, 0, CLASS_SLICE_C);
+     Tensor *confInputTensor = createSlicedTensor(convoutTensor, 1, CLASS_SLICE_C, CONF_SLICE_C);
+     Tensor *bboxInputTensor = createSlicedTensor(convoutTensor, 1, CLASS_SLICE_C + CONF_SLICE_C, BBOX_SLICE_C);
+
+     sliceTensor(convoutTensor, classInputTensor, 1, 0, CLASS_SLICE_C);
+     sliceTensor(convoutTensor, confInputTensor, 1, CLASS_SLICE_C, CONF_SLICE_C);
+     sliceTensor(convoutTensor, bboxInputTensor, 1, CLASS_SLICE_C + CONF_SLICE_C, BBOX_SLICE_C);
+     saveDeviceTensor("data/convoutTensorDebug.txt", convoutTensor, "%7f");
+     saveDeviceTensor("data/classInputTensorDebug.txt", classInputTensor, "%7f");
+     saveDeviceTensor("data/confInputTensorDebug.txt", confInputTensor, "%7f");
+     saveDeviceTensor("data/bboxInputTensorDebug.txt", bboxInputTensor, "%7f");
+}
+
 int main(int argc, char *argv[])
 {
      init();
-     /* testSliceTensor(); */
+     testSliceTensor();
      /* testReshapeTensor(); */
      /* testReduceArgMax(); */
      /* testMultiplyElement(); */
@@ -347,5 +424,7 @@ int main(int argc, char *argv[])
      /* testPickElements(); */
      /* testIsMemDevice(); */
      /* testIsMemHost(); */
-     testMallocTensor();
+     /* testMallocTensor(); */
+     testFindSliceBug();
+     testFindSliceBug0();
 }

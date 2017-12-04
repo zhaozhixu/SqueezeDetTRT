@@ -5,10 +5,19 @@
 
 static __device__ float E = 2.718281828;
 
-__global__ void sliceTensorKernel(float *src, float *dst, int sdim, int ddim, int start, int block_size)
+/* __global__ void sliceTensorKernel(float *src, float *dst, int sdim, int ddim, int start, int block_size) */
+/* { */
+/*      int di = blockIdx.x * block_size + threadIdx.x; */
+/*      /\* si is the index of src elements to be copied. */
+/*         The "block index" of src[si] is (blockIdx.x / ddim * sdim + blockIdx.x % ddim + start) *\/ */
+/*      int si = (blockIdx.x / ddim * sdim + blockIdx.x % ddim + start) * block_size + threadIdx.x; */
+/*      dst[di] = src[si]; */
+/* } */
+
+__global__ void sliceTensorKernel(float *src, float *dst, int start, int s_vol, int d_vol, int vol, int block_size)
 {
      int di = blockIdx.x * block_size + threadIdx.x;
-     int si = (blockIdx.x / ddim * sdim + blockIdx.x % ddim + start) * block_size + threadIdx.x;
+     int si = di / d_vol * s_vol + di % d_vol + start * vol;
      dst[di] = src[si];
 }
 

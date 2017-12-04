@@ -243,13 +243,6 @@ void printTensor(const Tensor *tensor, const char *fmt)
      fprintTensor(stdout, tensor, fmt);
 }
 
-void saveTensor(const char *file_name, const Tensor *tensor, const char *fmt)
-{
-     FILE *fp = fopen(file_name, "w");
-     fprintTensor(fp, tensor, fmt);
-     fclose(fp);
-}
-
 void fprintDeviceTensor(FILE *stream, const Tensor *d_tensor, const char *fmt)
 {
      assert(isTensorValid(d_tensor));
@@ -261,6 +254,13 @@ void fprintDeviceTensor(FILE *stream, const Tensor *d_tensor, const char *fmt)
 void printDeviceTensor(const Tensor *d_tensor, const char *fmt)
 {
      fprintDeviceTensor(stdout, d_tensor, fmt);
+}
+
+void saveTensor(const char *file_name, const Tensor *tensor, const char *fmt)
+{
+     FILE *fp = fopen(file_name, "w");
+     fprintTensor(fp, tensor, fmt);
+     fclose(fp);
 }
 
 void saveDeviceTensor(const char *file_name, const Tensor *d_tensor, const char *fmt)
@@ -326,6 +326,25 @@ Tensor *createSlicedTensor(const Tensor *src, int dim, int start, int len)
      return dst;
 }
 
+/* Tensor *sliceTensor(const Tensor *src, Tensor *dst, int dim, int start, int len) */
+/* { */
+/*      assert(isTensorValid(src) && isTensorValid(dst)); */
+/*      assert(isDeviceMem(src->data) && isDeviceMem(dst->data)); */
+/*      assert(dst->ndim == src->ndim); */
+/*      for (int i = 0; i < dst->ndim; i++) */
+/*           assert(i == dim ? dst->dims[i] == len : dst->dims[i] == src->dims[i]); */
+
+/*      int i, block_size, block_num; /\* block size and number of cuda threads *\/ */
+/*      int ddim = dst->dims[dim], sdim = src->dims[dim]; */
+/*      for (i = dim+1, block_size = 1; i < dst->ndim; i++) */
+/*           block_size *= dst->dims[i]; */
+/*      for (i = 0, block_num = 1; i <= dim; i++) */
+/*           block_num *= dst->dims[i]; */
+
+/*      sliceTensorKernel<<<block_num, block_size>>>(src->data, dst->data, sdim, ddim, start, block_size); */
+/*      return dst; */
+/* } */
+
 Tensor *sliceTensor(const Tensor *src, Tensor *dst, int dim, int start, int len)
 {
      assert(isTensorValid(src) && isTensorValid(dst));
@@ -334,14 +353,17 @@ Tensor *sliceTensor(const Tensor *src, Tensor *dst, int dim, int start, int len)
      for (int i = 0; i < dst->ndim; i++)
           assert(i == dim ? dst->dims[i] == len : dst->dims[i] == src->dims[i]);
 
-     int i, block_size, block_num; /* block size and number of cuda threads */
-     int ddim = dst->dims[dim], sdim = src->dims[dim];
-     for (i = dim+1, block_size = 1; i < dst->ndim; i++)
-          block_size *= dst->dims[i];
-     for (i = 0, block_num = 1; i <= dim; i++)
-          block_num *= dst->dims[i];
+     int i, d_vol, s_vol, vol;
+     int thread_num, block_size, block_num; /* block size and number of cuda threads */
+     for (i = dim+1, vol = 1; i < dst->ndim; i++)
+          vol *= dst->dims[i];
+     d_vol = vol * dst->dims[dim];
+     s_vol = vol * src->dims[dim];
+     thread_num = dst->len;
+     block_size = MAX_THREADS_PER_BLOCK;
+     block_num = thread_num / block_size + 1;
 
-     sliceTensorKernel<<<block_num, block_size>>>(src->data, dst->data, sdim, ddim, start, block_size);
+     sliceTensorKernel<<<block_num, block_size>>>(src->data, dst->data, start, s_vol, d_vol, vol, block_size);
      return dst;
 }
 
