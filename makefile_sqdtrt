@@ -26,18 +26,19 @@ COMMON_LD_FLAGS += $(LIBPATHS) -L$(OUTDIR)
 LFLAGS=$(COMMON_LD_FLAGS)
 LFLAGSD=$(COMMON_LD_FLAGS)
 
-$(TARGET): sqdtrt.o common.o trtUtil.o tensorUtil.o tensorCuda.o
-	$(CC) -Wall sqdtrt.o common.o trtUtil.o tensorUtil.o tensorCuda.o -o $(TARGET) $(CFLAGSD) $(LIBPATHS) $(LIBS)
-sqdtrt.o: sqdtrt.cpp tensorUtil.h tensorCuda.h common.h
+$(TARGET): sqdtrt.o common.o trtUtil.o tensorUtil.o tensorCuda.o errorHandle.o
+	$(CC) -Wall sqdtrt.o common.o trtUtil.o tensorUtil.o tensorCuda.o errorHandle.o -o $(TARGET) $(CFLAGSD) $(LIBPATHS) $(LIBS)
+sqdtrt.o: sqdtrt.cpp tensorUtil.h tensorCuda.h common.h errorHandle.h
 	$(CUCC) -c sqdtrt.cpp $(CFLAGSD) $(LFLAGSD) $(LIBS)
-common.o: common.cpp common.h
+common.o: common.cpp common.h errorHandle.h
 	$(CUCC) -c common.cpp $(CFLAGSD) $(LFLAGSD) $(LIBS)
-trtUtil.o: trtUtil.cpp trtUtil.h
+trtUtil.o: trtUtil.cpp trtUtil.h errorHandle.h
 	$(CUCC) -c trtUtil.cpp $(CFLAGSD) $(LFLAGSD) $(LIBS)
-tensorUtil.o: tensorUtil.cu tensorUtil.h tensorCuda.h
+tensorUtil.o: tensorUtil.cu tensorUtil.h tensorCuda.h errorHandle.h
 	$(CUCC) -c tensorUtil.cu $(CFLAGSD) $(LFLAGSD) $(LIBS)
-tensorCuda.o: tensorCuda.cu tensorCuda.h
+tensorCuda.o: tensorCuda.cu tensorCuda.h errorHandle.h
 	$(CUCC) -c tensorCuda.cu $(CFLAGSD) $(LFLAGSD) $(LIBS)
-
+errorHandle.o: errorHandle.cu errorHandle.h
+	$(CUCC) -g -c errorHandle.cu $(INCPATHS) $(LIBPATHS) $(COMMON_LIBS)
 clean:
 	rm -f *.o

@@ -408,10 +408,22 @@ void testFindSliceBug()
      saveDeviceTensor("data/bboxInputTensorDebug.txt", bboxInputTensor, "%7f");
 }
 
+void testClone()
+{
+     Tensor *tensor_d0 = cloneTensor(t, H2D);
+     Tensor *tensor_d1 = cloneTensor(tensor_d0, D2D);
+     Tensor *tensor_h0 = cloneTensor(tensor_d1, D2H);
+     Tensor *tensor_h1 = cloneTensor(tensor_h0, H2H);
+     printDeviceTensor(tensor_d0, "%.2f");
+     printDeviceTensor(tensor_d1, "%.2f");
+     printTensor(tensor_h0, "%.2f");
+     printTensor(tensor_h1, "%.2f");
+}
+
 int main(int argc, char *argv[])
 {
      init();
-     testSliceTensor();
+     /* testSliceTensor(); */
      /* testReshapeTensor(); */
      /* testReduceArgMax(); */
      /* testMultiplyElement(); */
@@ -425,6 +437,7 @@ int main(int argc, char *argv[])
      /* testIsMemDevice(); */
      /* testIsMemHost(); */
      /* testMallocTensor(); */
-     testFindSliceBug();
-     testFindSliceBug0();
+     /* testFindSliceBug(); */
+     /* testFindSliceBug0(); */
+     testClone();
 }

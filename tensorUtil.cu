@@ -6,6 +6,7 @@
 #include <thrust/execution_policy.h>
 #include "tensorCuda.h"
 #include "tensorUtil.h"
+#include "errorHandle.h"
 
 #define MAXDIM 8
 #define max(a, b) ((a) > (b) ? (a) : (b))
@@ -67,21 +68,21 @@ void *cloneMem(const void *src, size_t size, CloneKind kind)
           memmove(p, src, size);
           return p;
      case H2D:
-          cudaMalloc(&p, size);
+          checkError(cudaMalloc(&p, size));
           assert(p);
-          cudaMemcpy(p, src, size, cudaMemcpyHostToDevice);
+          checkError(cudaMemcpy(p, src, size, cudaMemcpyHostToDevice));
           return p;
      case D2D:
           assert(isDeviceMem(src));
-          cudaMalloc(&p, size);
+          checkError(cudaMalloc(&p, size));
           assert(p);
-          cudaMemcpy(p, src, size, cudaMemcpyDeviceToDevice);
+          checkError(cudaMemcpy(p, src, size, cudaMemcpyDeviceToDevice));
           return p;
      case D2H:
           assert(isDeviceMem(src));
           p = malloc(size);
           assert(p);
-          cudaMemcpy(p, src, size, cudaMemcpyDeviceToHost);
+          checkError(cudaMemcpy(p, src, size, cudaMemcpyDeviceToHost));
           return p;
      default:
           fprintf(stderr, "unknown CloneKind %d\n", kind);
