@@ -46,14 +46,14 @@ int isShapeEqual(const Tensor *t1, const Tensor *t2)
 int isHostMem(const void *ptr)
 {
      cudaPointerAttributes attributes;
-     cudaPointerGetAttributes(&attributes, ptr);
+     checkError(cudaPointerGetAttributes(&attributes, ptr));
      return attributes.memoryType == cudaMemoryTypeHost;
 }
 
 int isDeviceMem(const void *ptr)
 {
      cudaPointerAttributes attributes;
-     cudaPointerGetAttributes(&attributes, ptr);
+     checkError(cudaPointerGetAttributes(&attributes, ptr));
      return attributes.memoryType == cudaMemoryTypeDevice;
 }
 
@@ -112,26 +112,26 @@ void *repeatMem(void *data, size_t size, int times, CloneKind kind)
                memmove(p, data, size);
           return dst;
      case H2D:
-          cudaMalloc(&p, size * times);
+          checkError(cudaMalloc(&p, size * times));
           dst = p;
           assert(p);
           for (i = 0; i < times; i++, p = (char *)p + size * times)
-               cudaMemcpy(p, data, size, cudaMemcpyHostToDevice);
+               checkError(cudaMemcpy(p, data, size, cudaMemcpyHostToDevice));
           return dst;
      case D2D:
           assert(isDeviceMem(data));
-          cudaMalloc(&p, size * times);
+          checkError(cudaMalloc(&p, size * times));
           dst = p;
           assert(p);
           for (i = 0; i < times; i++, p = (char *)p + size * times)
-               cudaMemcpy(p, data, size, cudaMemcpyDeviceToDevice);
+               checkError(cudaMemcpy(p, data, size, cudaMemcpyDeviceToDevice));
           return dst;
      case D2H:
           assert(isDeviceMem(data));
           dst = p = malloc(size * times);
           assert(p);
           for (i = 0; i < times; i++, p = (char *)p + size * times)
-               cudaMemcpy(p, data, size, cudaMemcpyDeviceToHost);
+               checkError(cudaMemcpy(p, data, size, cudaMemcpyDeviceToHost));
           return dst;
      default:
           fprintf(stderr, "unknown CloneKind %d\n", kind);
@@ -323,7 +323,7 @@ Tensor *createSlicedTensor(const Tensor *src, int dim, int start, int len)
      memmove(dst->dims, src->dims, sizeof(int) * dst->ndim);
      dst->dims[dim] = len;
      dst->len = src->len / src->dims[dim] * len;
-     cudaMalloc(&dst->data, sizeof(float) * dst->len);
+     checkError(cudaMalloc(&dst->data, sizeof(float) * dst->len));
      return dst;
 }
 
@@ -364,7 +364,7 @@ Tensor *sliceTensor(const Tensor *src, Tensor *dst, int dim, int start, int len)
      block_size = MAX_THREADS_PER_BLOCK;
      block_num = thread_num / block_size + 1;
 
-     sliceTensorKernel<<<block_num, block_size>>>(src->data, dst->data, start, s_vol, d_vol, vol, block_size);
+     sliceTensorKernel<<<block_num, block_size>>>(src->data, dst->data, start, s_vol, d_vol, vol, block_size, thread_num);
      return dst;
 }
 
@@ -389,7 +389,7 @@ Tensor *createReducedTensor(const Tensor *src, int dim)
      memmove(dst->dims, src->dims, sizeof(int) * dst->ndim);
      dst->dims[dim] = 1;
      dst->len = computeLength(dst->ndim, dst->dims);
-     cudaMalloc(&dst->data, sizeof(float) * dst->len);
+     checkError(cudaMalloc(&dst->data, sizeof(float) * dst->len));
      return dst;
 }
 
@@ -430,6 +430,38 @@ Tensor *multiplyElement(const Tensor *src1, const Tensor *src2, Tensor *dst)
      block_num = thread_num / block_size + 1;
 
      multiplyElementKernel<<<block_num, block_size>>>(src1->data, src2->data, dst->data, block_size, dst->len);
+     return dst;
+}
+
+Tensor *transposeTensor(const Tensor *src, Tensor *dst, int *axes, int **workspace)
+{
+     assert(isTensorValid(src) && isTensorValid(dst));
+     assert(src->len == dst->len);
+     assert(src->ndim == dst->ndim);
+
+     int *s_ids, *d_ids, *s_dims, *d_dims;
+     int thread_num, block_size, block_num;
+     thread_num = dst->len;
+     block_size = MAX_THREADS_PER_BLOCK;
+     block_num = thread_num / block_size + 1;
+     s_dims = (int *)cloneMem(src->dims, sizeof(int) * src->ndim, H2D);
+     d_dims = (int *)cloneMem(dst->dims, sizeof(int) * dst->ndim, H2D);
+     if (!workspace) {
+          checkError(cudaMalloc(&s_ids, sizeof(int) * dst->ndim * thread_num));
+          checkError(cudaMalloc(&d_ids, sizeof(int) * dst->ndim * thread_num));
+     } else {
+          s_ids = workspace[0];
+          d_ids = workspace[1];
+     }
+
+     transposeTensorKernel<<<block_num, block_size>>>(src->data, dst->data, dst->ndim, s_dims, d_dims, s_ids, d_ids, axes, block_size, thread_num);
+
+     if (!workspace) {
+          checkError(cudaFree(s_ids));
+          checkError(cudaFree(d_ids));
+     }
+     checkError(cudaFree(s_dims));
+     checkError(cudaFree(d_dims));
      return dst;
 }
 
@@ -480,7 +512,7 @@ void pickElements(float *src, float *dst, int stride, int *idx, int len)
      block_size = MAX_THREADS_PER_BLOCK;
      block_num = thread_num / block_size + 1;
 
-     pickElementsKernel<<<block_num, block_size>>>(src, dst, idx, len, stride, block_size);
+     pickElementsKernel<<<block_num, block_size>>>(src, dst, idx, stride, block_size, thread_num);
 }
 
 /* void pickElements(float* src,float* dst,int stride,int* idx,int len) */
@@ -502,7 +534,7 @@ float computeIou(float *bbox0, float *bbox1)
 {
      assert(bbox0 && bbox1);
 
-     float lr, tb;              /* left-right, top-bottom */
+     float lr, tb;              /* left-right, top-bottom for intersection*/
      float intersection, total;
      lr = min(bbox0[2], bbox1[2]) - max(bbox0[0], bbox1[0]);
      if (lr >= 0) {

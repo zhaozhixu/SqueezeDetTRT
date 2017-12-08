@@ -1,5 +1,5 @@
 CC = g++
-CUCC = nvcc -m64 -ccbin $(CC)
+CUCC = nvcc -m64 -ccbin $(CC) -lineinfo
 TARGET = testtrt
 
 TRIPLE?=x86_64-linux

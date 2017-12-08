@@ -1,9 +1,27 @@
 #include <cuda_runtime.h>
+#include <stdlib.h>
+#include <stdio.h>
 
 #define max(a, b) ((a) > (b) ? (a) : (b))
 #define min(a, b) ((a) < (b) ? (a) : (b))
 
 static __device__ float E = 2.718281828;
+
+static __device__ int getIndex(int *ids, int ndim, int *dims)
+{
+     int i, id;
+     for (i = 0, id = ids[0]; i < ndim-1; i++)
+          id = dims[i+1] * id + ids[i+1];
+     return id;
+}
+
+static __device__ void getIndexes(int id, int *ids, int ndim, int *dims)
+{
+     for (int i = ndim-1; i >=0; i--) {
+          ids[i] = id % dims[i];
+          id = id / dims[i];
+     }
+}
 
 /* __global__ void sliceTensorKernel(float *src, float *dst, int sdim, int ddim, int start, int block_size) */
 /* { */
@@ -14,9 +32,11 @@ static __device__ float E = 2.718281828;
 /*      dst[di] = src[si]; */
 /* } */
 
-__global__ void sliceTensorKernel(float *src, float *dst, int start, int s_vol, int d_vol, int vol, int block_size)
+__global__ void sliceTensorKernel(float *src, float *dst, int start, int s_vol, int d_vol, int vol, int block_size, int total)
 {
      int di = blockIdx.x * block_size + threadIdx.x;
+     if (di >= total)
+          return;
      int si = di / d_vol * s_vol + di % d_vol + start * vol;
      dst[di] = src[si];
 }
@@ -51,6 +71,22 @@ __global__ void multiplyElementKernel(float *src1, float *src2, float *dst, int 
      if (di >= total)
           return;
      dst[di] = src1[di] * src2[di];
+}
+
+__global__ void transposeTensorKernel(float *src, float *dst, int ndim, int *s_dims, int *d_dims, int *s_ids, int *d_ids, int *axes, int block_size, int total)
+{
+     int di = blockIdx.x * block_size + threadIdx.x;
+     if (di >= total)
+          return;
+
+     int *t_s_ids = s_ids + di * ndim;
+     int *t_d_ids = d_ids + di * ndim;
+     getIndexes(di, t_d_ids, ndim, d_dims);
+     for (int i = 0; i < ndim; i++)
+          t_s_ids[axes[i]] = t_d_ids[i];
+     int si = getIndex(t_s_ids, ndim, s_dims);
+
+     dst[di] = src[si];
 }
 
 __global__ void transformBboxSQDKernel(float *delta, float *anchor, float *res, float width, float height, float *x_scales, float *y_scales, int anchor_num, int block_size, int total)

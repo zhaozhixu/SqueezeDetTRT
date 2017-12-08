@@ -264,8 +264,8 @@ void findThrustBug()
 
 void testIou()
 {
-     float bbox0[] = {0, 0, 0, 0};
-     float bbox1[] = {0, 0, 0, 0};
+     float bbox0[] = {625.08, 199.44, 661.39, 235.33};
+     float bbox1[] = {584.57, 197.15, 611.98, 234.65};
      printf("%f\n", computeIou(bbox0, bbox1));
 }
 
@@ -420,6 +420,25 @@ void testClone()
      printTensor(tensor_h1, "%.2f");
 }
 
+void testTransposeTensor()
+{
+     Tensor *s_t = cloneTensor(t, H2D);
+     int d_dims[] = {1, 3, 3, 2};
+     Tensor *d_t = mallocTensor(s_t->ndim, d_dims, DEVICE);
+     int axes[] = {0, 1, 3, 2};
+     int *axes_d = (int *)cloneMem(axes, sizeof(int) * 4, H2D);
+     int *workspace[2];
+     cudaMalloc(&workspace[0], sizeof(int) * s_t->ndim * s_t->len);
+     cudaMalloc(&workspace[1], sizeof(int) * d_t->ndim * d_t->len);
+
+     start = clock();
+     transposeTensor(s_t, d_t, axes_d, workspace);
+     end = clock();
+
+     printf("transposeTensor in %ld\n", end - start);
+     printDeviceTensor(d_t, "%.2f");
+}
+
 int main(int argc, char *argv[])
 {
      init();
@@ -439,5 +458,6 @@ int main(int argc, char *argv[])
      /* testMallocTensor(); */
      /* testFindSliceBug(); */
      /* testFindSliceBug0(); */
-     testClone();
+     /* testClone(); */
+     testTransposeTensor();
 }

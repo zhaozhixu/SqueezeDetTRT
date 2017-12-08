@@ -42,6 +42,7 @@ Tensor *reshapeTensor(const Tensor *src, int newNdim, const int *newDims);
 Tensor *createReducedTensor(const Tensor *src, int dim);
 void *reduceArgMax(const Tensor *src, Tensor *dst, Tensor *arg, int dim);
 Tensor *multiplyElement(const Tensor *src1, const Tensor *src2, Tensor *dst);
+Tensor *transposeTensor(const Tensor *src, Tensor *dst, int *axes, int **workspace);
 Tensor *transformBboxSQD(const Tensor *delta, const Tensor *anchor, Tensor *res, float width, float height, float *x_scale, float *y_scale);
 void tensorIndexSort(Tensor *src, int *idx);
 void pickElements(float *src, float *dst, int stride, int *idx, int len);
