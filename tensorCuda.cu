@@ -89,34 +89,37 @@ __global__ void transposeTensorKernel(float *src, float *dst, int ndim, int *s_d
      dst[di] = src[si];
 }
 
-__global__ void transformBboxSQDKernel(float *delta, float *anchor, float *res, float width, float height, float *x_scales, float *y_scales, int anchor_num, int block_size, int total)
+__global__ void transformBboxSQDKernel(float *delta, float *anchor, float *res, float width, float height, float *x_scales, float *y_scales, int block_size, int total)
 {
      int di = blockIdx.x * block_size + threadIdx.x;
      if (di >= total)
           return;
 
-     int batch_idx = di / anchor_num;
+     /* int batch_idx = di / anchor_num; */
+     /* now only support batch_size = 1 */
+     int batch_idx = 0;
      float x_scale = x_scales[batch_idx];
      float y_scale = y_scales[batch_idx];
      float img_width = width / x_scale;
      float img_height = height / y_scale;
 
-     /* si is the index of the first elements to be computed in the thread, then
+     /* (not used) si is the index of the first elements to be computed in the thread, then
         si = 4 * anchor_num * batch_idx + (di - anchor_num * batch_idx),
         which is the same as the following code: */
-     int si = 3 * anchor_num * batch_idx  + di;
+     /* int si = 3 * anchor_num * batch_idx  + di; */
      /* take 4 elements from each of delta and anchor */
-     float d[4] = {delta[si], delta[si+anchor_num], delta[si+2*anchor_num], delta[si+3*anchor_num]};
-     float a[4] = {anchor[si], anchor[si+anchor_num], anchor[si+2*anchor_num], anchor[si+3*anchor_num]};
+     int si = di * 4;
+     float d[4] = {delta[si], delta[si+1], delta[si+2], delta[si+3]};
+     float a[4] = {anchor[si], anchor[si+1], anchor[si+2], anchor[si+3]};
      /* compute and put 4 result elements to res, according to SqueezeDet's source code */
      float cx = a[0] + d[0] * a[2] / x_scale;
      float cy = a[1] + d[1] * a[3] / y_scale;
      float w = a[2] * (d[2] < 1 ? expf(d[2]) : d[2] * E) / x_scale;
      float h = a[3] * (d[3] < 1 ? expf(d[3]) : d[3] * E) / y_scale;
-     res[di] = min(max(cx - w * 0.5, 0), img_width - 1);
-     res[di+anchor_num] = min(max(cy - h * 0.5, 0), img_height - 1);
-     res[di+2*anchor_num] = max(min(cx + w * 0.5, img_width - 1), 0);
-     res[di+3*anchor_num] = max(min(cy + h * 0.5, img_height - 1), 0);
+     res[si] = min(max(cx - w * 0.5, 0), img_width - 1);
+     res[si+1] = min(max(cy - h * 0.5, 0), img_height - 1);
+     res[si+2] = max(min(cx + w * 0.5, img_width - 1), 0);
+     res[si+3] = max(min(cy + h * 0.5, img_height - 1), 0);
 }
 
 __global__ void pickElementsKernel(float *src, float *dst, int *idx, int stride, int block_size, int total)

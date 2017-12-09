@@ -466,27 +466,27 @@ Tensor *transposeTensor(const Tensor *src, Tensor *dst, int *axes, int **workspa
 }
 
 /* transform from bbox delta to bbox coordinates, using hyper param EXP_THRESH = 1.0.
-   delta, anchor, res are all of shape [N, 4, A], where N is batch size and A is anchors number per image.
+   delta, anchor, res are all of the same shape [..., 4]
    width and height are resized image width and height.
-   x_scales and y_scales are length of N. */
-Tensor *transformBboxSQD(const Tensor *delta, const Tensor *anchor, Tensor *res, float width, float height, float *x_scales, float *y_scales)
+   x_scales and y_scales are (temporary) pointers to width/original_width and height/original_height. */
+Tensor *transformBboxSQD(const Tensor *delta, const Tensor *anchor, Tensor *res, float width, float height, float *x_scales, float *y_scales) /* TODO: change x_scales and y_scales to floats */
 {
      assert(isShapeEqual(delta, anchor));
      assert(isShapeEqual(delta, res));
-     assert(delta->ndim == 3);
-     assert(delta->dims[1] == 4);
+     assert(delta->ndim == 5);
+     assert(delta->dims[4] == 4);
      assert(isDeviceMem(delta->data) && isDeviceMem(anchor->data) && isDeviceMem(res->data));
      assert(isDeviceMem(x_scales) && isDeviceMem(y_scales));
 
      /* take 4 elements from each of delta and anchor,
         and put 4 result elements to res in one thread */
-     int thread_num, block_size, block_num, anchor_num;
-     anchor_num = res->dims[2];
-     thread_num = res->dims[0] * res->dims[2];
+     int i, thread_num, block_size, block_num;
+     for (i = 0, thread_num = 1; i < res->ndim-1; i++)
+          thread_num *= res->dims[i];
      block_size = MAX_THREADS_PER_BLOCK;
      block_num = thread_num / block_size + 1;
 
-     transformBboxSQDKernel<<<block_num, block_size>>>(delta->data, anchor->data, res->data, width, height, x_scales, y_scales, anchor_num, block_size, thread_num);
+     transformBboxSQDKernel<<<block_num, block_size>>>(delta->data, anchor->data, res->data, width, height, x_scales, y_scales, block_size, thread_num);
      return res;
 }
 

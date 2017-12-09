@@ -327,8 +327,13 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      int confInputDims[] = {INPUT_N, CONF_SLICE_C, CONVOUT_H, CONVOUT_W};
      int bboxInputDims[] = {INPUT_N, BBOX_SLICE_C, CONVOUT_H, CONVOUT_W};
      int classOutputDims[] = {INPUT_N, ANCHORS_PER_GRID, OUTPUT_CLS_SIZE, CONVOUT_H, CONVOUT_W};
-     int confOutputDims[] = {INPUT_N, ANCHORS_PER_GRID, CONVOUT_H, CONVOUT_W};
+     int classTransDims[] = {INPUT_N, CONVOUT_H, CONVOUT_W, ANCHORS_PER_GRID, OUTPUT_CLS_SIZE};
+     int confOutputDims[] = {INPUT_N, ANCHORS_PER_GRID, 1, CONVOUT_H, CONVOUT_W};
+     int confTransDims[] = {INPUT_N, CONVOUT_H, CONVOUT_W, ANCHORS_PER_GRID, 1};
      int bboxOutputDims[] = {INPUT_N, ANCHORS_PER_GRID, OUTPUT_BBOX_SIZE, CONVOUT_H, CONVOUT_W};
+     int bboxTransDims[] = {INPUT_N, CONVOUT_H, CONVOUT_W, ANCHORS_PER_GRID, OUTPUT_BBOX_SIZE};
+     int transAxes[] = {0, 3, 4, 1, 2};
+     int *transAxesDevice = (int *)cloneMem(transAxes, sizeof(int) * 5, H2D);
      Tensor *convoutTensor = createTensor((float *)convBuffers[convoutIndex], 4, convout_dims);
      Tensor *classInputTensor = createTensor((float *)interpretBuffers[classInputIndex], 4, classInputDims);
      Tensor *confInputTensor = createTensor((float *)interpretBuffers[confInputIndex], 4, confInputDims);
@@ -336,19 +341,23 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      Tensor *classOutputTensor = createTensor((float *)interpretBuffers[classOutputIndex], 5, classOutputDims);
      Tensor *confOutputTensor = createTensor((float *)interpretBuffers[confOutputIndex], 5, confOutputDims);
      Tensor *bboxOutputTensor = reshapeTensor(bboxInputTensor, 5, bboxOutputDims);
+     Tensor *classTransTensor = mallocTensor(5, classTransDims, DEVICE);
+     Tensor *confTransTensor = mallocTensor(5, confTransDims, DEVICE);
+     Tensor *bboxTransTensor = mallocTensor(5, bboxTransDims, DEVICE);
 
-     float *reduceMaxRes, *reduceArgRes, *mulRes, *bboxRes, *anchorsDevice, *xScalesDevice, *yScalesDevice;
-     size_t reduceMaxResSize = batchSize * anchorsNum * sizeof(float);
-     size_t reduceArgResSize = batchSize * anchorsNum * sizeof(float);
-     size_t mulResSize = batchSize * anchorsNum * sizeof(float);
-     size_t bboxResSize = batchSize * anchorsNum * OUTPUT_BBOX_SIZE * sizeof(float);
+     // float *reduceMaxRes, *reduceArgRes, *mulRes, *bboxRes, *anchorsDevice, *xScalesDevice, *yScalesDevice;
+     float *anchorsDevice, *xScalesDevice, *yScalesDevice;
+     // size_t reduceMaxResSize = batchSize * anchorsNum * sizeof(float);
+     // size_t reduceArgResSize = batchSize * anchorsNum * sizeof(float);
+     // size_t mulResSize = batchSize * anchorsNum * sizeof(float);
+     // size_t bboxResSize = batchSize * anchorsNum * OUTPUT_BBOX_SIZE * sizeof(float);
      size_t anchorsDeviceSize = batchSize * anchorsNum * ANCHOR_SIZE * sizeof(float);
      size_t xScalesDeviceSize = batchSize * sizeof(float);
      size_t yScalesDeviceSize = batchSize * sizeof(float);
-     CHECK(cudaMalloc(&reduceMaxRes, reduceMaxResSize));
-     CHECK(cudaMalloc(&reduceArgRes, reduceArgResSize));
-     CHECK(cudaMalloc(&mulRes, mulResSize));
-     CHECK(cudaMalloc(&bboxRes, bboxResSize));
+     // CHECK(cudaMalloc(&reduceMaxRes, reduceMaxResSize));
+     // CHECK(cudaMalloc(&reduceArgRes, reduceArgResSize));
+     // CHECK(cudaMalloc(&mulRes, mulResSize));
+     // CHECK(cudaMalloc(&bboxRes, bboxResSize));
      anchorsDevice = (float *)cloneMem(anchors, anchorsDeviceSize, H2D);
      xScalesDevice = (float *)cloneMem(x_scales, xScalesDeviceSize, H2D);
      yScalesDevice = (float *)cloneMem(y_scales, yScalesDeviceSize, H2D);
@@ -358,15 +367,16 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      // int mulResDims[] = {INPUT_N, anchorsNum, 1};
      // int bboxResDims[] = {INPUT_N, anchorsNum, OUTPUT_BBOX_SIZE};
      // int anchorsDeviceDims[] = {INPUT_N, anchorsNum, ANCHOR_SIZE};
-     int reduceMaxResDims[] = {INPUT_N, ANCHORS_PER_GRID, 1, CONVOUT_H, CONVOUT_W};
-     int reduceArgResDims[] = {INPUT_N, ANCHORS_PER_GRID, 1, CONVOUT_H, CONVOUT_W};
-     int mulResDims[] = {INPUT_N, ANCHORS_PER_GRID, 1, CONVOUT_H, CONVOUT_W};
-     int bboxResDims[] = {INPUT_N, ANCHORS_PER_GRID, OUTPUT_BBOX_SIZE, CONVOUT_H, CONVOUT_W};
-     int anchorsDeviceDims[] = {INPUT_N, ANCHORS_PER_GRID, ANCHOR_SIZE, CONVOUT_H, CONVOUT_W};
-     Tensor *reduceMaxResTensor = createTensor(reduceMaxRes, 5, reduceMaxResDims);
-     Tensor *reduceArgResTensor = createTensor(reduceArgRes, 5, reduceArgResDims);
-     Tensor *mulResTensor = createTensor(mulRes, 5, mulResDims);
-     Tensor *bboxResTensor = createTensor(bboxRes, 5, bboxResDims);
+     int reduceMaxResDims[] = {INPUT_N, CONVOUT_H, CONVOUT_W, ANCHORS_PER_GRID, 1};
+     int reduceArgResDims[] = {INPUT_N, CONVOUT_H, CONVOUT_W, ANCHORS_PER_GRID, 1};
+     int mulResDims[] = {INPUT_N, CONVOUT_H, CONVOUT_W, ANCHORS_PER_GRID, 1};
+     int bboxResDims[] = {INPUT_N, CONVOUT_H, CONVOUT_W, ANCHORS_PER_GRID, OUTPUT_BBOX_SIZE};
+     // int anchorsDeviceDims[] = {INPUT_N, ANCHORS_PER_GRID, ANCHOR_SIZE, CONVOUT_H, CONVOUT_W};
+     int anchorsDeviceDims[] = {INPUT_N, CONVOUT_H, CONVOUT_W, ANCHORS_PER_GRID, ANCHOR_SIZE};
+     Tensor *reduceMaxResTensor = mallocTensor(5, reduceMaxResDims, DEVICE);
+     Tensor *reduceArgResTensor = mallocTensor(5, reduceArgResDims, DEVICE);
+     Tensor *mulResTensor = mallocTensor(5, mulResDims, DEVICE);
+     Tensor *bboxResTensor = mallocTensor(5, bboxResDims, DEVICE);
      Tensor *anchorsDeviceTensor = createTensor(anchorsDevice, 5, anchorsDeviceDims);
 
      int *orderDevice, *orderHost; // for top-n-detecion
@@ -375,19 +385,19 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
           orderHost[i] = i;
      orderDevice = (int *)cloneMem(orderHost, batchSize * anchorsNum * sizeof(int), H2D);
 
-     float  *finalClass, *finalProbs, *finalBbox;
-     size_t finalClassSize = batchSize * TOP_N_DETECTION * sizeof(float);
-     size_t finalProbsSize = batchSize * TOP_N_DETECTION * sizeof(float);
-     size_t finalBboxSize = batchSize * TOP_N_DETECTION * OUTPUT_BBOX_SIZE * sizeof(float);
-     CHECK(cudaMalloc(&finalClass, finalClassSize));
-     CHECK(cudaMalloc(&finalProbs, finalProbsSize));
-     CHECK(cudaMalloc(&finalBbox, finalBboxSize));
-     int finalClassDims[] = {INPUT_N, 1, TOP_N_DETECTION};
-     int finalProbsDims[] = {INPUT_N, 1, TOP_N_DETECTION};
-     int finalBboxDims[] = {INPUT_N, OUTPUT_BBOX_SIZE, TOP_N_DETECTION};
-     Tensor *finalClassTensor = createTensor(finalClass, 3, finalClassDims);
-     Tensor *finalProbsTensor = createTensor(finalProbs, 3, finalProbsDims);
-     Tensor *finalBboxTensor = createTensor(finalBbox, 3, finalBboxDims);
+     // float  *finalClass, *finalProbs, *finalBbox;
+     // size_t finalClassSize = batchSize * TOP_N_DETECTION * sizeof(float);
+     // size_t finalProbsSize = batchSize * TOP_N_DETECTION * sizeof(float);
+     // size_t finalBboxSize = batchSize * TOP_N_DETECTION * OUTPUT_BBOX_SIZE * sizeof(float);
+     // CHECK(cudaMalloc(&finalClass, finalClassSize));
+     // CHECK(cudaMalloc(&finalProbs, finalProbsSize));
+     // CHECK(cudaMalloc(&finalBbox, finalBboxSize));
+     int finalClassDims[] = {INPUT_N, TOP_N_DETECTION, 1};
+     int finalProbsDims[] = {INPUT_N, TOP_N_DETECTION, 1};
+     int finalBboxDims[] = {INPUT_N, TOP_N_DETECTION, OUTPUT_BBOX_SIZE};
+     Tensor *finalClassTensor = mallocTensor(3, finalClassDims, DEVICE);
+     Tensor *finalProbsTensor = mallocTensor(3, finalProbsDims, DEVICE);
+     Tensor *finalBboxTensor = mallocTensor(3, finalBboxDims, DEVICE);
 
      cudaStream_t stream;
      CHECK(cudaStreamCreate(&stream));
@@ -407,9 +417,12 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      sliceTensor(convoutTensor, confInputTensor, 1, CLASS_SLICE_C, CONF_SLICE_C);
      sliceTensor(convoutTensor, bboxInputTensor, 1, CLASS_SLICE_C + CONF_SLICE_C, BBOX_SLICE_C);
      interpretContext.enqueue(batchSize, interpretBuffers, stream, nullptr);
-     reduceArgMax(classOutputTensor, reduceMaxResTensor, reduceArgResTensor, 2);
-     multiplyElement(reduceMaxResTensor, confOutputTensor, mulResTensor);
-     transformBboxSQD(bboxOutputTensor, anchorsDeviceTensor, bboxResTensor, INPUT_W, INPUT_H, xScalesDevice, yScalesDevice);
+     transposeTensor(classOutputTensor, classTransTensor, transAxesDevice, NULL); // TODO: add workspace
+     transposeTensor(confOutputTensor, confTransTensor, transAxesDevice, NULL);
+     transposeTensor(bboxOutputTensor, bboxTransTensor, transAxesDevice, NULL);
+     reduceArgMax(classTransTensor, reduceMaxResTensor, reduceArgResTensor, 4);
+     multiplyElement(reduceMaxResTensor, confTransTensor, mulResTensor);
+     transformBboxSQD(bboxTransTensor, anchorsDeviceTensor, bboxResTensor, INPUT_W, INPUT_H, xScalesDevice, yScalesDevice);
 
      CHECK(cudaEventRecord(stop, 0));
      CHECK(cudaEventSynchronize(stop));
@@ -426,6 +439,10 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      saveDeviceTensor("data/reduceMaxResTensor.txt", reduceMaxResTensor, "%15.6e");
      saveDeviceTensor("data/reduceArgResTensor.txt", reduceArgResTensor, "%15.6e");
      saveDeviceTensor("data/bboxResTensor.txt", bboxResTensor, "%15.6e");
+     saveDeviceTensor("data/confTransTensor.txt", confTransTensor, "%15.6e");
+     saveDeviceTensor("data/classTransTensor.txt", classTransTensor, "%15.6e");
+     saveDeviceTensor("data/bboxTransTensor.txt", bboxTransTensor, "%15.6e");
+     saveDeviceTensor("data/anchorsDeviceTensor.txt", anchorsDeviceTensor, "%15.6e");
 
      int classInputDims2[] = {INPUT_N, 9, 3, CONVOUT_W*CONVOUT_H};
      int classInputDims3[] = {INPUT_N, 3, 9, CONVOUT_W*CONVOUT_H};
@@ -437,14 +454,14 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      // TODO: only batchSize = 1 supported
      Tensor *mulResTensorCopy = cloneTensor(mulResTensor, D2D);
      tensorIndexSort(mulResTensorCopy, orderDevice);
-     pickElements(mulResTensor->data, finalProbs, 1, orderDevice, TOP_N_DETECTION);
-     pickElements(reduceArgResTensor->data, finalClass, 1, orderDevice, TOP_N_DETECTION);
-     // pickElements(bboxResTensor->data, finalBbox, OUTPUT_BBOX_SIZE, orderDevice, TOP_N_DETECTION);
-     // pick xmin, ymin, xmax, ymax from bboxResTensor respectively
-     pickElements(bboxResTensor->data, finalBbox, 1, orderDevice, TOP_N_DETECTION);
-     pickElements(bboxResTensor->data + anchorsNum, finalBbox + TOP_N_DETECTION, 1, orderDevice, TOP_N_DETECTION);
-     pickElements(bboxResTensor->data + 2 * anchorsNum, finalBbox + 2 * TOP_N_DETECTION, 1, orderDevice, TOP_N_DETECTION);
-     pickElements(bboxResTensor->data + 3 * anchorsNum, finalBbox + 3 * TOP_N_DETECTION, 1, orderDevice, TOP_N_DETECTION);
+     pickElements(mulResTensor->data, finalProbsTensor->data, 1, orderDevice, TOP_N_DETECTION);
+     pickElements(reduceArgResTensor->data, finalClassTensor->data, 1, orderDevice, TOP_N_DETECTION);
+     pickElements(bboxResTensor->data, finalBboxTensor->data, OUTPUT_BBOX_SIZE, orderDevice, TOP_N_DETECTION);
+     // (not used) pick xmin, ymin, xmax, ymax from bboxResTensor respectively
+     // pickElements(bboxResTensor->data, finalBbox, 1, orderDevice, TOP_N_DETECTION);
+     // pickElements(bboxResTensor->data + anchorsNum, finalBbox + TOP_N_DETECTION, 1, orderDevice, TOP_N_DETECTION);
+     // pickElements(bboxResTensor->data + 2 * anchorsNum, finalBbox + 2 * TOP_N_DETECTION, 1, orderDevice, TOP_N_DETECTION);
+     // pickElements(bboxResTensor->data + 3 * anchorsNum, finalBbox + 3 * TOP_N_DETECTION, 1, orderDevice, TOP_N_DETECTION);
 
      FILE * sort_file = fopen("sort.txt", "w");
      int *orderHost2 = (int *)cloneMem(orderDevice, anchorsNum * sizeof(int), D2H);
@@ -455,9 +472,9 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      saveDeviceTensor("data/finalProbsTensor.txt", finalProbsTensor, "%15.6e");
      saveDeviceTensor("data/finalBboxTensor.txt", finalBboxTensor, "%15.6e");
 
-     CHECK(cudaMemcpyAsync(outProbs, finalProbs, finalProbsSize, cudaMemcpyDeviceToHost, stream));
-     CHECK(cudaMemcpyAsync(outClass, finalClass, finalClassSize, cudaMemcpyDeviceToHost, stream));
-     CHECK(cudaMemcpyAsync(outBbox, finalBbox, finalBboxSize, cudaMemcpyDeviceToHost, stream));
+     CHECK(cudaMemcpyAsync(outProbs, finalProbsTensor->data, finalProbsTensor->len*sizeof(float), cudaMemcpyDeviceToHost, stream));
+     CHECK(cudaMemcpyAsync(outClass, finalClassTensor->data, finalClassTensor->len*sizeof(float), cudaMemcpyDeviceToHost, stream));
+     CHECK(cudaMemcpyAsync(outBbox, finalBboxTensor->data, finalBboxTensor->len*sizeof(float), cudaMemcpyDeviceToHost, stream));
      CHECK(cudaStreamSynchronize(stream));
 
      // timer destroy
@@ -475,10 +492,14 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      CHECK(cudaFree(bboxInput));
      CHECK(cudaFree(interpretBuffers[classOutputIndex]));
      CHECK(cudaFree(interpretBuffers[confOutputIndex]));
-     CHECK(cudaFree(reduceMaxRes));
-     CHECK(cudaFree(reduceArgRes));
-     CHECK(cudaFree(mulRes));
-     CHECK(cudaFree(bboxRes));
+     CHECK(cudaFree(classTransTensor->data));
+     CHECK(cudaFree(confTransTensor->data));
+     CHECK(cudaFree(bboxTransTensor->data));
+     CHECK(cudaFree(reduceMaxResTensor->data));
+     CHECK(cudaFree(reduceArgResTensor->data));
+     CHECK(cudaFree(mulResTensor->data));
+     CHECK(cudaFree(bboxResTensor->data));
+     CHECK(cudaFree(transAxesDevice));
      CHECK(cudaFree(anchorsDevice));
      CHECK(cudaFree(xScalesDevice));
      CHECK(cudaFree(yScalesDevice));
@@ -544,37 +565,37 @@ float *prepareAnchors(const float *anchor_shape, int width, int height, int N, i
 {
      assert(anchor_shape);
      float center_x[W], center_y[H];
-     float anchors[4 * B * H * W];
-     // int i, j, k;
-     int i;
+     float anchors[H * W * B * 4];
+     int i, j, k;
+     // int i;
 
      for (i = 1; i <= W; i++)
           center_x[i-1] = i * width / (W + 1.0);
      for (i = 1; i <= H; i++)
           center_y[i-1] = i * height / (H + 1.0);
 
-     int a_vol = B * H * W;
-     int b_vol = H * W;
-     for (i = 0; i < a_vol; i++) {
-          anchors[i] = center_x[i % W];
-          anchors[a_vol + i] = center_y[i / W % H];
-          anchors[a_vol * 2 + i] = anchor_shape[i / b_vol * 2];
-          anchors[a_vol * 3 + i] = anchor_shape[i / b_vol * 2 + 1];
-     }
-
-     // int w_vol = H * B * 4;
-     // int h_vol = B * 4;
-     // int b_vol = 4;
-     // for (i = 0; i < W; i++) {
-     //      for (j = 0; j < H; j++) {
-     //           for (k = 0; k < B; k++) {
-     //                anchors[i*w_vol+j*h_vol+k*b_vol] = center_x[i];
-     //                anchors[i*w_vol+j*h_vol+k*b_vol+1] = center_y[j];
-     //                anchors[i*w_vol+j*h_vol+k*b_vol+2] = anchor_shape[k*2];
-     //                anchors[i*w_vol+j*h_vol+k*b_vol+3] = anchor_shape[k*2+1];
-     //           }
-     //      }
+     // int a_vol = B * H * W;
+     // int b_vol = H * W;
+     // for (i = 0; i < a_vol; i++) {
+     //      anchors[i] = center_x[i % W];
+     //      anchors[a_vol + i] = center_y[i / W % H];
+     //      anchors[a_vol * 2 + i] = anchor_shape[i / b_vol * 2];
+     //      anchors[a_vol * 3 + i] = anchor_shape[i / b_vol * 2 + 1];
      // }
+
+     int h_vol = W * B * 4;
+     int w_vol = B * 4;
+     int b_vol = 4;
+     for (i = 0; i < H; i++) {
+          for (j = 0; j < W; j++) {
+               for (k = 0; k < B; k++) {
+                    anchors[i*h_vol+j*w_vol+k*b_vol] = center_x[j];
+                    anchors[i*h_vol+j*w_vol+k*b_vol+1] = center_y[i];
+                    anchors[i*h_vol+j*w_vol+k*b_vol+2] = anchor_shape[k*2];
+                    anchors[i*h_vol+j*w_vol+k*b_vol+3] = anchor_shape[k*2+1];
+               }
+          }
+     }
 
      float *ret = (float *)repeatMem(anchors, sizeof(float)*4*B*H*W, N, H2H);
      assert(ret);
@@ -585,8 +606,8 @@ void detectionFilter(float *bboxes, float *classes, float *probs, int *keep, int
 {
      assert(bboxes && classes && probs && keep);
 
-     float bbox0[OUTPUT_BBOX_SIZE], bbox1[OUTPUT_BBOX_SIZE];
-     int anchor_num = CONVOUT_H * CONVOUT_W * ANCHORS_PER_GRID;
+     // float bbox0[OUTPUT_BBOX_SIZE], bbox1[OUTPUT_BBOX_SIZE];
+     // int anchor_num = CONVOUT_H * CONVOUT_W * ANCHORS_PER_GRID;
      int i, j;
      for (i = 0; i < num_probs; i++)
           keep[i] = 1;
@@ -608,23 +629,23 @@ void detectionFilter(float *bboxes, float *classes, float *probs, int *keep, int
                // bbox1[1] = bboxes[j+num_probs];
                // bbox1[2] = bboxes[j+num_probs*2];
                // bbox1[3] = bboxes[j+num_probs*3];
-               float b00 = bboxes[i];
-               float b01 = bboxes[i+num_probs];
-               float b02 = bboxes[i+num_probs*2];
-               float b03 = bboxes[i+num_probs*3];
-               float b10 = bboxes[j];
-               float b11 = bboxes[j+num_probs];
-               float b12 = bboxes[j+num_probs*2];
-               float b13 = bboxes[j+num_probs*3];
-               bbox0[0] = b00;
-               bbox0[1] = b01;
-               bbox0[2] = b02;
-               bbox0[3] = b03;
-               bbox1[0] = b10;
-               bbox1[1] = b11;
-               bbox1[2] = b12;
-               bbox1[3] = b13;
-               if (computeIou(bbox0, bbox1) > nms_thresh)
+               // float b00 = bboxes[i];
+               // float b01 = bboxes[i+num_probs];
+               // float b02 = bboxes[i+num_probs*2];
+               // float b03 = bboxes[i+num_probs*3];
+               // float b10 = bboxes[j];
+               // float b11 = bboxes[j+num_probs];
+               // float b12 = bboxes[j+num_probs*2];
+               // float b13 = bboxes[j+num_probs*3];
+               // bbox0[0] = b00;
+               // bbox0[1] = b01;
+               // bbox0[2] = b02;
+               // bbox0[3] = b03;
+               // bbox1[0] = b10;
+               // bbox1[1] = b11;
+               // bbox1[2] = b12;
+               // bbox1[3] = b13;
+               if (computeIou(&bboxes[i*OUTPUT_BBOX_SIZE],&bboxes[j*OUTPUT_BBOX_SIZE]) > nms_thresh)
                          keep[j] = 0;
           }
      }
@@ -635,14 +656,11 @@ void fprintResult(FILE *fp, float *bboxes, float *classes, float *probs, int *ke
      assert(fp && bboxes && classes && probs && keep);
 
      int i;
-     float bbox[OUTPUT_BBOX_SIZE];
+     float *bbox;
      for (i = 0; i < num_probs; i++) {
           if (!keep[i])
                continue;
-          bbox[0] = bboxes[i];
-          bbox[1] = bboxes[i+num_probs];
-          bbox[2] = bboxes[i+num_probs*2];
-          bbox[3] = bboxes[i+num_probs*3];
+          bbox = &bboxes[i * OUTPUT_BBOX_SIZE];
           fprintf(fp, "%s -1 -1 0.0 %.2f %.2f %.2f %.2f 0.0 0.0 0.0 0.0 0.0 0.0 0.0 %.3f\n",
                   CLASS_NAMES[(int)classes[i]], bbox[0], bbox[1], bbox[2], bbox[3], probs[i]);
      }
@@ -660,6 +678,7 @@ int main(int argc, char** argv)
      float *x_scales = new float[imageList.size()];
      float *y_scales = new float[imageList.size()];
      float *data = prepareData(imageList, x_scales, y_scales);
+     printf("x_s = %.2f, y_s = %.2f\n", x_scales[0], y_scales[0]);
      float *anchors = prepareAnchors(ANCHOR_SHAPE, INPUT_W, INPUT_H, INPUT_N, CONVOUT_H, CONVOUT_W, ANCHORS_PER_GRID);
      float *outProbs = new float[INPUT_N * TOP_N_DETECTION];
      float *outClass = new float[INPUT_N * TOP_N_DETECTION];

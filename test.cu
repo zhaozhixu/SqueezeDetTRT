@@ -160,36 +160,36 @@ void testAnchor()
                              224, 108, 78, 170, 72, 43};
      float center_x[W], center_y[H];
      float anchors[H*W*B*4];
-     /* int i, j, k; */
-     int i;
+     int i, j, k;
+     /* int i; */
      for (i = 1; i <= W; i++)
           center_x[i-1] = i * width / (W + 1.0);
      for (i = 1; i <= H; i++)
           center_y[i-1] = i * height / (H + 1.0);
-     /* int anchors_dims[] = {W, H, B, 4}; */
-     int anchors_dims[] = {4, B, H, W};
+     int anchors_dims[] = {H, W, B, 4};
+     /* int anchors_dims[] = {4, B, H, W}; */
      Tensor *anchor_tensor = createTensor(anchors, 4, anchors_dims);
-     int a_vol = B * H * W;
-     int b_vol = H * W;
-     for (i = 0; i < a_vol; i++) {
-          anchors[i] = center_x[i % W];
-          anchors[a_vol + i] = center_y[i / W % H];
-          anchors[a_vol * 2 + i] = anchor_shape[i / b_vol * 2];
-          anchors[a_vol * 3 + i] = anchor_shape[i / b_vol * 2 + 1];
-     }
-     /* int w_vol = H*B*4; */
-     /* int h_vol = B*4; */
-     /* int b_vol = 4; */
-     /* for (i = 0; i < W; i++) { */
-     /*      for (j = 0; j < H; j++) { */
-     /*           for (k = 0; k < B; k++) { */
-     /*                anchors[i*w_vol+j*h_vol+k*b_vol] = center_x[i]; */
-     /*                anchors[i*w_vol+j*h_vol+k*b_vol+1] = center_y[j]; */
-     /*                anchors[i*w_vol+j*h_vol+k*b_vol+2] = anchor_shape[k*2]; */
-     /*                anchors[i*w_vol+j*h_vol+k*b_vol+3] = anchor_shape[k*2+1]; */
-     /*           } */
-     /*      } */
+     /* int a_vol = B * H * W; */
+     /* int b_vol = H * W; */
+     /* for (i = 0; i < a_vol; i++) { */
+     /*      anchors[i] = center_x[i % W]; */
+     /*      anchors[a_vol + i] = center_y[i / W % H]; */
+     /*      anchors[a_vol * 2 + i] = anchor_shape[i / b_vol * 2]; */
+     /*      anchors[a_vol * 3 + i] = anchor_shape[i / b_vol * 2 + 1]; */
      /* } */
+     int h_vol = W*B*4;
+     int w_vol = B*4;
+     int b_vol = 4;
+     for (i = 0; i < H; i++) {
+          for (j = 0; j < W; j++) {
+               for (k = 0; k < B; k++) {
+                    anchors[i*h_vol+j*w_vol+k*b_vol] = center_x[j];
+                    anchors[i*h_vol+j*w_vol+k*b_vol+1] = center_y[i];
+                    anchors[i*h_vol+j*w_vol+k*b_vol+2] = anchor_shape[k*2];
+                    anchors[i*h_vol+j*w_vol+k*b_vol+3] = anchor_shape[k*2+1];
+               }
+          }
+     }
      printf("anchor_tensor:\n");
      printTensor(anchor_tensor, "%.2f");
 }
@@ -276,20 +276,21 @@ void testPickElements()
                        8.0, 9.0, 10.0, 11.0,
                        12.0, 13.0, 14.0, 15.0,
                        16.0, 17.0};
-     int index[] = {9, 15, 2, 17, 11};
-     int len = 5;
+     int index[] = {3, 2, 1, 0};
+     int len = 4;
+     int stride = 4;
      int *index_device = (int *)cloneMem(index, len * sizeof(int), H2D); /* remember this! */
      float *src_device = (float *)cloneMem(src_host, 18 * sizeof(float), H2D);
      float *dst_device;
-     cudaMalloc(&dst_device, len * sizeof(float));
+     cudaMalloc(&dst_device, len * stride * sizeof(float));
 
-     pickElements(src_device, dst_device, 1, index_device, len);
+     pickElements(src_device, dst_device, stride, index_device, len);
 
-     float *dst_host = (float *)cloneMem(dst_device, len * sizeof(float), D2H);
+     float *dst_host = (float *)cloneMem(dst_device, len * stride * sizeof(float), D2H);
      for (int i = 0; i < 18; i++)
           printf("%.2f ", src_host[i]);
      printf("\n");
-     for (int i = 0; i < len; i++)
+     for (int i = 0; i < len * stride; i++)
           printf("%.2f ", dst_host[i]);
      printf("\n");
 }
@@ -432,7 +433,8 @@ void testTransposeTensor()
      cudaMalloc(&workspace[1], sizeof(int) * d_t->ndim * d_t->len);
 
      start = clock();
-     transposeTensor(s_t, d_t, axes_d, workspace);
+     /* transposeTensor(s_t, d_t, axes_d, workspace); */
+     transposeTensor(s_t, d_t, axes_d, NULL);
      end = clock();
 
      printf("transposeTensor in %ld\n", end - start);
@@ -452,12 +454,12 @@ int main(int argc, char *argv[])
      /* findThrustBug(); */
      /* testOpencv(); */
      /* testIou(); */
-     /* testPickElements(); */
+     testPickElements();
      /* testIsMemDevice(); */
      /* testIsMemHost(); */
      /* testMallocTensor(); */
      /* testFindSliceBug(); */
      /* testFindSliceBug0(); */
      /* testClone(); */
-     testTransposeTensor();
+     /* testTransposeTensor(); */
 }
