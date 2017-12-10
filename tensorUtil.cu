@@ -469,14 +469,13 @@ Tensor *transposeTensor(const Tensor *src, Tensor *dst, int *axes, int **workspa
    delta, anchor, res are all of the same shape [..., 4]
    width and height are resized image width and height.
    x_scales and y_scales are (temporary) pointers to width/original_width and height/original_height. */
-Tensor *transformBboxSQD(const Tensor *delta, const Tensor *anchor, Tensor *res, float width, float height, float *x_scales, float *y_scales) /* TODO: change x_scales and y_scales to floats */
+Tensor *transformBboxSQD(const Tensor *delta, const Tensor *anchor, Tensor *res, float width, float height, float img_width, float img_height)
 {
      assert(isShapeEqual(delta, anchor));
      assert(isShapeEqual(delta, res));
      assert(delta->ndim == 5);
      assert(delta->dims[4] == 4);
      assert(isDeviceMem(delta->data) && isDeviceMem(anchor->data) && isDeviceMem(res->data));
-     assert(isDeviceMem(x_scales) && isDeviceMem(y_scales));
 
      /* take 4 elements from each of delta and anchor,
         and put 4 result elements to res in one thread */
@@ -486,7 +485,7 @@ Tensor *transformBboxSQD(const Tensor *delta, const Tensor *anchor, Tensor *res,
      block_size = MAX_THREADS_PER_BLOCK;
      block_num = thread_num / block_size + 1;
 
-     transformBboxSQDKernel<<<block_num, block_size>>>(delta->data, anchor->data, res->data, width, height, x_scales, y_scales, block_size, thread_num);
+     transformBboxSQDKernel<<<block_num, block_size>>>(delta->data, anchor->data, res->data, width, height, img_width, img_height, block_size, thread_num);
      return res;
 }
 

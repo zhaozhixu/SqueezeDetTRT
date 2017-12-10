@@ -278,7 +278,7 @@ createInterpretEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
      return engine;
 }
 
-void doInference(IExecutionContext& convContext, IExecutionContext& interpretContext, float* input, float* anchors, float *x_scales, float *y_scales, float *outProbs, float *outClass, float *outBbox, int batchSize)
+void doInference(IExecutionContext& convContext, IExecutionContext& interpretContext, float* input, float* anchors, float img_width, float img_height, float *outProbs, float *outClass, float *outBbox, int batchSize)
 {
      const ICudaEngine& convEngine = convContext.getEngine();
      const ICudaEngine& interpretEngine = interpretContext.getEngine();
@@ -345,22 +345,18 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      Tensor *confTransTensor = mallocTensor(5, confTransDims, DEVICE);
      Tensor *bboxTransTensor = mallocTensor(5, bboxTransDims, DEVICE);
 
-     // float *reduceMaxRes, *reduceArgRes, *mulRes, *bboxRes, *anchorsDevice, *xScalesDevice, *yScalesDevice;
-     float *anchorsDevice, *xScalesDevice, *yScalesDevice;
+     // float *reduceMaxRes, *reduceArgRes, *mulRes, *bboxRes, *anchorsDevice, *imgWidthDevice, *imgHeightDevice;
+     float *anchorsDevice, *imgWidthDevice, *imgHeightDevice;
      // size_t reduceMaxResSize = batchSize * anchorsNum * sizeof(float);
      // size_t reduceArgResSize = batchSize * anchorsNum * sizeof(float);
      // size_t mulResSize = batchSize * anchorsNum * sizeof(float);
      // size_t bboxResSize = batchSize * anchorsNum * OUTPUT_BBOX_SIZE * sizeof(float);
      size_t anchorsDeviceSize = batchSize * anchorsNum * ANCHOR_SIZE * sizeof(float);
-     size_t xScalesDeviceSize = batchSize * sizeof(float);
-     size_t yScalesDeviceSize = batchSize * sizeof(float);
      // CHECK(cudaMalloc(&reduceMaxRes, reduceMaxResSize));
      // CHECK(cudaMalloc(&reduceArgRes, reduceArgResSize));
      // CHECK(cudaMalloc(&mulRes, mulResSize));
      // CHECK(cudaMalloc(&bboxRes, bboxResSize));
      anchorsDevice = (float *)cloneMem(anchors, anchorsDeviceSize, H2D);
-     xScalesDevice = (float *)cloneMem(x_scales, xScalesDeviceSize, H2D);
-     yScalesDevice = (float *)cloneMem(y_scales, yScalesDeviceSize, H2D);
 
      // int reduceMaxResDims[] = {INPUT_N, anchorsNum, 1};
      // int reduceArgResDims[] = {INPUT_N, anchorsNum, 1};
@@ -422,7 +418,7 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      transposeTensor(bboxOutputTensor, bboxTransTensor, transAxesDevice, NULL);
      reduceArgMax(classTransTensor, reduceMaxResTensor, reduceArgResTensor, 4);
      multiplyElement(reduceMaxResTensor, confTransTensor, mulResTensor);
-     transformBboxSQD(bboxTransTensor, anchorsDeviceTensor, bboxResTensor, INPUT_W, INPUT_H, xScalesDevice, yScalesDevice);
+     transformBboxSQD(bboxTransTensor, anchorsDeviceTensor, bboxResTensor, INPUT_W, INPUT_H, img_width, img_height);
 
      CHECK(cudaEventRecord(stop, 0));
      CHECK(cudaEventSynchronize(stop));
@@ -501,8 +497,6 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      CHECK(cudaFree(bboxResTensor->data));
      CHECK(cudaFree(transAxesDevice));
      CHECK(cudaFree(anchorsDevice));
-     CHECK(cudaFree(xScalesDevice));
-     CHECK(cudaFree(yScalesDevice));
      CHECK(cudaFree(orderDevice));
      CHECK(cudaFree(mulResTensorCopy->data))
      free(orderHost);
@@ -530,7 +524,7 @@ void APIToModel(unsigned int maxBatchSize, IHostMemory **convModelStream, IHostM
 }
 
 // rearrange image data to [N, C, H, W] order
-float *prepareData(std::vector<std::string> &imageList, float *x_scales, float *y_scales)
+float *prepareData(std::vector<std::string> &imageList, float *img_width, float *img_height)
 {
      std::vector<cv::Mat> images; // available images
      float* data = new float[INPUT_N * INPUT_C * INPUT_H * INPUT_W];
@@ -539,12 +533,8 @@ float *prepareData(std::vector<std::string> &imageList, float *x_scales, float *
      // srand(unsigned(time(nullptr))); // read a random sample image
      // std::random_shuffle(imageList.begin(), imageList.end(), [](int i) {return rand() % i; });
      assert(images.size() <= imageList.size());
-     float x_scale, y_scale;
-     for (int i = 0; i < N; ++i) {
-          images.push_back(readImage(imageList[i], INPUT_W, INPUT_H, &x_scale, &y_scale));
-          x_scales[i] = x_scale;
-          y_scales[i] = y_scale;
-     }
+     for (int i = 0; i < N; ++i)
+          images.push_back(readImage(imageList[i], INPUT_W, INPUT_H, img_width, img_height));
 
      // pixel mean used by the SqueezeDet's author
      float pixelMean[3]{ 103.939f, 116.779f, 123.68f }; // also in BGR order
@@ -621,30 +611,6 @@ void detectionFilter(float *bboxes, float *classes, float *probs, int *keep, int
           for (j = i + 1; j < num_probs; j++) {
                if (!keep[j] || classes[i] != classes[j])
                     continue;
-               // bbox0[0] = bboxes[i];
-               // bbox0[1] = bboxes[i+num_probs];
-               // bbox0[2] = bboxes[i+num_probs*2];
-               // bbox0[3] = bboxes[i+num_probs*3];
-               // bbox1[0] = bboxes[j];
-               // bbox1[1] = bboxes[j+num_probs];
-               // bbox1[2] = bboxes[j+num_probs*2];
-               // bbox1[3] = bboxes[j+num_probs*3];
-               // float b00 = bboxes[i];
-               // float b01 = bboxes[i+num_probs];
-               // float b02 = bboxes[i+num_probs*2];
-               // float b03 = bboxes[i+num_probs*3];
-               // float b10 = bboxes[j];
-               // float b11 = bboxes[j+num_probs];
-               // float b12 = bboxes[j+num_probs*2];
-               // float b13 = bboxes[j+num_probs*3];
-               // bbox0[0] = b00;
-               // bbox0[1] = b01;
-               // bbox0[2] = b02;
-               // bbox0[3] = b03;
-               // bbox1[0] = b10;
-               // bbox1[1] = b11;
-               // bbox1[2] = b12;
-               // bbox1[3] = b13;
                if (computeIou(&bboxes[i*OUTPUT_BBOX_SIZE],&bboxes[j*OUTPUT_BBOX_SIZE]) > nms_thresh)
                          keep[j] = 0;
           }
@@ -675,20 +641,13 @@ int main(int argc, char** argv)
 
      std::vector<std::string> imageList = getImageList(argv[1]);
      printf("image num: %ld\n", imageList.size());
-     float *x_scales = new float[imageList.size()];
-     float *y_scales = new float[imageList.size()];
-     float *data = prepareData(imageList, x_scales, y_scales);
-     printf("x_s = %.2f, y_s = %.2f\n", x_scales[0], y_scales[0]);
+     float img_width, img_height;
+     float *data = prepareData(imageList, &img_width, &img_height);
      float *anchors = prepareAnchors(ANCHOR_SHAPE, INPUT_W, INPUT_H, INPUT_N, CONVOUT_H, CONVOUT_W, ANCHORS_PER_GRID);
      float *outProbs = new float[INPUT_N * TOP_N_DETECTION];
      float *outClass = new float[INPUT_N * TOP_N_DETECTION];
      float *outBbox = new float[INPUT_N * TOP_N_DETECTION * OUTPUT_BBOX_SIZE];
      int *keep = new int[INPUT_N * TOP_N_DETECTION];
-     // int probsNum = INPUT_N * CONVOUT_H * CONVOUT_W * ANCHORS_PER_GRID;
-     // float *outProbs = new float[probsNum];
-     // float *outClass = new float[probsNum];
-     // float *outBbox = new float[probsNum * OUTPUT_BBOX_SIZE];
-     // int *keep = new int[probsNum];
 
      // create engines
      IHostMemory *convModelStream{ nullptr };
@@ -703,7 +662,7 @@ int main(int argc, char** argv)
      IExecutionContext *interpretContext = interpretEngine->createExecutionContext();
 
      // run inference
-     doInference(*convContext, *interpretContext, data, anchors, x_scales, y_scales, outProbs, outClass, outBbox, INPUT_N);
+     doInference(*convContext, *interpretContext, data, anchors, img_width, img_height, outProbs, outClass, outBbox, INPUT_N);
      detectionFilter(outBbox, outClass, outProbs, keep, TOP_N_DETECTION, NMS_THRESH, PROB_THRESH);
      fprintResult(stdout, outBbox, outClass, outProbs, keep, TOP_N_DETECTION);
 
@@ -715,8 +674,6 @@ int main(int argc, char** argv)
      runtime->destroy();
 
      delete[] data;
-     delete[] x_scales;
-     delete[] y_scales;
      delete[] anchors;
      delete[] outProbs;
      delete[] outClass;
