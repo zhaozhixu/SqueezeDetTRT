@@ -127,7 +127,7 @@ cv::Mat readImage(const std::string& filename, int width, int height, float *img
 {
     cv::Mat img = cv::imread(filename);
     printf("filename: %s\t", filename.c_str());
-    printf("img.total(): %ld\n", img.total());
+    printf("img.total(): %ld\t", img.total());
     if (img_width && img_height) {
          *img_width = img.size().width;
          *img_height = img.size().height;

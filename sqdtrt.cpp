@@ -417,7 +417,7 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      CHECK(cudaEventSynchronize(stop));
      CHECK(cudaEventElapsedTime(&timeDetect, start, stop));
 
-#ifndef NDEBUG
+#ifdef DEBUG
      saveDeviceTensor("data/convoutTensor.txt", convoutTensor, "%15.6e");
      saveDeviceTensor("data/classInputTensor.txt", classInputTensor, "%15.6e");
      saveDeviceTensor("data/confInputTensor.txt", confInputTensor, "%15.6e");
@@ -448,7 +448,7 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      pickElements(reduceArgResTensor->data, finalClassTensor->data, 1, orderDevice, TOP_N_DETECTION);
      pickElements(bboxResTensor->data, finalBboxTensor->data, OUTPUT_BBOX_SIZE, orderDevice, TOP_N_DETECTION);
 
-#ifndef NDEBUG
+#ifdef DEBUG
      FILE * sort_file = fopen("sort.txt", "w");
      int *orderHost2 = (int *)cloneMem(orderDevice, anchorsNum * sizeof(int), D2H);
      for (int i = 0; i < anchorsNum; i++)

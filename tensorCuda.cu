@@ -109,8 +109,11 @@ __global__ void transformBboxSQDKernel(float *delta, float *anchor, float *res, 
      float d[4] = {delta[si], delta[si+1], delta[si+2], delta[si+3]};
      float a[4] = {anchor[si], anchor[si+1], anchor[si+2], anchor[si+3]};
      /* compute and put 4 result elements to res, according to SqueezeDet's source code */
-     float cx = (a[0] + d[0] * a[2]) / x_scale;
-     float cy = (a[1] + d[1] * a[3]) / y_scale;
+
+     /* TODO: don't know why, always has an about 15 pixels shift */
+     float shift = 15;
+     float cx = (a[0] + d[0] * a[2]) / x_scale - shift;
+     float cy = (a[1] + d[1] * a[3]) / y_scale - shift;
      float w = (a[2] * (d[2] < 1 ? expf(d[2]) : d[2] * E)) / x_scale;
      float h = (a[3] * (d[3] < 1 ? expf(d[3]) : d[3] * E)) / y_scale;
      res[si] = min(max(cx - w * 0.5, 0), img_width - 1);
