@@ -1,41 +1,88 @@
 #include <stdlib.h>
+#include <string.h>
 #include <dirent.h>
 #include <unistd.h>
+#include <err.h>
 #include <sys/stat.h>
 #include <opencv2/opencv.hpp>
 #include <fstream>
 #include "trtUtil.h"
 
-extern const int INPUT_H;
-extern const int INPUT_W;
+static const char *imageFormat[] = {"jpeg", "jpg", "png", "ppm", "bmp", NULL};
+
+static int isImageFile(char *name)
+{
+     assert(strlen(name) > 0);
+     char *suffix;
+     int i;
+
+     if ((suffix = strrchr(name, '.')) == NULL)
+          return 0;
+     for (i = 0; imageFormat[i]; i++)
+          if (strstr(suffix, imageFormat[i]))
+               return 1;
+     return 0;
+}
+
+static char *changeSuffix(char *name, const char *new_suffix)
+{
+     assert(strlen(new_suffix) > 0 && strlen(name) > 0);
+     char *suffix;
+
+     if ((suffix = strrchr(name, '.')) == NULL) {
+          suffix = name + strlen(name);
+          *suffix = '.';
+     }
+     suffix++;
+     strcpy(suffix, new_suffix);
+
+     return name;
+}
 
 std::vector<std::string> getImageList(const char *pathname)
 {
-     struct stat statbuf;
      struct dirent *dirp;
      DIR *dp;
      std::vector<std::string> imgList;
 
-     if (stat(pathname, &statbuf) < 0) {
-          perror("stat failed");
-          exit(EXIT_FAILURE);
-     }
-     if (S_ISDIR(statbuf.st_mode) == 0) {
-          fprintf(stderr, "'%s' not a directory.\n", pathname);
-          exit(EXIT_FAILURE);
-     }
-     if ((dp = opendir(pathname)) == NULL) {
-          perror("cannot read directory");
-          exit(EXIT_FAILURE);
-     }
+     // if (stat(pathname, &statbuf) < 0) {
+     //      perror("stat failed");
+     //      exit(EXIT_FAILURE);
+     // }
+     // if (S_ISDIR(statbuf.st_mode) == 0) {
+     //      fprintf(stderr, "'%s' not a directory.\n", pathname);
+     //      exit(EXIT_FAILURE);
+     // }
+     if ((dp = opendir(pathname)) == NULL)
+          err(EXIT_FAILURE, "%s", pathname);
 
      while ((dirp = readdir(dp)) != NULL) {
-          if (!strcmp(dirp->d_name, ".") || !strcmp(dirp->d_name, ".."))
+          if (!isImageFile(dirp->d_name) || !strcmp(dirp->d_name, ".") || !strcmp(dirp->d_name, ".."))
                continue;
-          // TODO: filter jpeg
           imgList.push_back(std::string(pathname) + std::string("/") + std::string(dirp->d_name));
      }
+     closedir(dp);
      return imgList;
+}
+
+char *sprintResultFilePath(char *buf, const char *img_name, const char *res_dir)
+{
+     DIR *dp;
+     if ((dp = opendir(res_dir)) == NULL)
+          err(EXIT_FAILURE, "%s", res_dir);
+     closedir(dp);
+
+     char *img_name_cpy = (char *)malloc(sizeof(char) * (strlen(img_name) + 1));
+     strcpy(img_name_cpy, img_name);
+     char *file_name;
+     if ((file_name = strrchr(img_name_cpy, '/')) == NULL)
+          file_name = img_name_cpy;
+     else
+          file_name++;
+     sprintf(buf, "%s/%s", res_dir, file_name);
+     changeSuffix(buf, "txt");
+     free(img_name_cpy);
+     return buf;
 }
 
 // Our weight files are in a very simple space delimited format.
@@ -79,7 +126,7 @@ std::map<std::string, Weights> loadWeights(const std::string file)
 cv::Mat readImage(const std::string& filename, int width, int height, float *img_width, float *img_height)
 {
     cv::Mat img = cv::imread(filename);
-    printf("filename: %s\n", filename.c_str());
+    printf("filename: %s\t", filename.c_str());
     printf("img.total(): %ld\n", img.total());
     if (img_width && img_height) {
          *img_width = img.size().width;

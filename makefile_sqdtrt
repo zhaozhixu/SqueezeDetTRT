@@ -26,8 +26,8 @@ COMMON_LD_FLAGS += $(LIBPATHS) -L$(OUTDIR)
 LFLAGS=$(COMMON_LD_FLAGS)
 LFLAGSD=$(COMMON_LD_FLAGS)
 
-$(TARGET): sqdtrt.o common.o trtUtil.o tensorUtil.o tensorCuda.o errorHandle.o
-	$(CC) -Wall sqdtrt.o common.o trtUtil.o tensorUtil.o tensorCuda.o errorHandle.o -o $(TARGET) $(CFLAGSD) $(LIBPATHS) $(LIBS)
+$(TARGET): sqdtrt.o common.o trtUtil.o tensorUtil.o tensorCuda.o errorHandle.o path_alloc.o
+	$(CC) -Wall sqdtrt.o common.o trtUtil.o tensorUtil.o tensorCuda.o errorHandle.o path_alloc.o -o $(TARGET) $(CFLAGSD) $(LIBPATHS) $(LIBS)
 sqdtrt.o: sqdtrt.cpp tensorUtil.h tensorCuda.h common.h errorHandle.h
 	$(CUCC) -c sqdtrt.cpp $(CFLAGSD) $(LFLAGSD) $(LIBS)
 common.o: common.cpp common.h errorHandle.h
@@ -39,6 +39,8 @@ tensorUtil.o: tensorUtil.cu tensorUtil.h tensorCuda.h errorHandle.h
 tensorCuda.o: tensorCuda.cu tensorCuda.h errorHandle.h
 	$(CUCC) -c tensorCuda.cu $(CFLAGSD) $(LFLAGSD) $(LIBS)
 errorHandle.o: errorHandle.cu errorHandle.h
-	$(CUCC) -g -c errorHandle.cu $(INCPATHS) $(LIBPATHS) $(COMMON_LIBS)
+	$(CUCC) -c errorHandle.cu $(INCPATHS) $(LIBPATHS) $(COMMON_LIBS)
+path_alloc.o: path_alloc.c path_alloc.h
+	$(CC) -c path_alloc.c
 clean:
 	rm -f *.o
