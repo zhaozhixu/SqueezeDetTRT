@@ -433,6 +433,7 @@ Tensor *multiplyElement(const Tensor *src1, const Tensor *src2, Tensor *dst)
      return dst;
 }
 
+/* (optional) workspace size equals (sizeof(int) * dst->ndim * dst->len), two of them */
 Tensor *transposeTensor(const Tensor *src, Tensor *dst, int *axes, int **workspace)
 {
      assert(isTensorValid(src) && isTensorValid(dst));

@@ -350,6 +350,13 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      Tensor *classTransTensor = mallocTensor(5, classTransDims, DEVICE);
      Tensor *confTransTensor = mallocTensor(5, confTransDims, DEVICE);
      Tensor *bboxTransTensor = mallocTensor(5, bboxTransDims, DEVICE);
+     int *classTransWorkspace[2], *confTransWorkspace[2], *bboxTransWorkspace[2];
+     CHECK(cudaMalloc(&classTransWorkspace[0], sizeof(int) * classTransTensor->ndim * classTransTensor->len));
+     CHECK(cudaMalloc(&classTransWorkspace[1], sizeof(int) * classTransTensor->ndim * classTransTensor->len));
+     CHECK(cudaMalloc(&confTransWorkspace[0], sizeof(int) * confTransTensor->ndim * confTransTensor->len));
+     CHECK(cudaMalloc(&confTransWorkspace[1], sizeof(int) * confTransTensor->ndim * confTransTensor->len));
+     CHECK(cudaMalloc(&bboxTransWorkspace[0], sizeof(int) * bboxTransTensor->ndim * bboxTransTensor->len));
+     CHECK(cudaMalloc(&bboxTransWorkspace[1], sizeof(int) * bboxTransTensor->ndim * bboxTransTensor->len));
 
      float *anchorsDevice, *imgWidthDevice, *imgHeightDevice;
      size_t anchorsDeviceSize = anchorsNum * ANCHOR_SIZE * sizeof(float);
@@ -368,7 +375,8 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      Tensor *anchorsDeviceTensor = createTensor(anchorsDevice, 5, anchorsDeviceDims);
 
      int *orderDevice, *orderHost; // for top-n-detecion
-     assert(orderHost = (int *)malloc(anchorsNum * sizeof(int)));
+     orderHost = (int *)malloc(anchorsNum * sizeof(int));
+     assert(orderHost);
      for (int i = 0; i < anchorsNum; i++)
           orderHost[i] = i;
      orderDevice = (int *)cloneMem(orderHost, anchorsNum * sizeof(int), H2D);
@@ -398,9 +406,9 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      sliceTensor(convoutTensor, confInputTensor, 1, CLASS_SLICE_C, CONF_SLICE_C);
      sliceTensor(convoutTensor, bboxInputTensor, 1, CLASS_SLICE_C + CONF_SLICE_C, BBOX_SLICE_C);
      interpretContext.enqueue(batchSize, interpretBuffers, stream, nullptr);
-     transposeTensor(classOutputTensor, classTransTensor, transAxesDevice, NULL); // TODO: add workspace
-     transposeTensor(confOutputTensor, confTransTensor, transAxesDevice, NULL);
-     transposeTensor(bboxOutputTensor, bboxTransTensor, transAxesDevice, NULL);
+     transposeTensor(classOutputTensor, classTransTensor, transAxesDevice, classTransWorkspace);
+     transposeTensor(confOutputTensor, confTransTensor, transAxesDevice, confTransWorkspace);
+     transposeTensor(bboxOutputTensor, bboxTransTensor, transAxesDevice, bboxTransWorkspace);
      reduceArgMax(classTransTensor, reduceMaxResTensor, reduceArgResTensor, 4);
      multiplyElement(reduceMaxResTensor, confTransTensor, mulResTensor);
      transformBboxSQD(bboxTransTensor, anchorsDeviceTensor, bboxResTensor, INPUT_W, INPUT_H, img_width, img_height);
@@ -409,6 +417,7 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      CHECK(cudaEventSynchronize(stop));
      CHECK(cudaEventElapsedTime(&timeDetect, start, stop));
 
+#ifndef NDEBUG
      saveDeviceTensor("data/convoutTensor.txt", convoutTensor, "%15.6e");
      saveDeviceTensor("data/classInputTensor.txt", classInputTensor, "%15.6e");
      saveDeviceTensor("data/confInputTensor.txt", confInputTensor, "%15.6e");
@@ -431,6 +440,7 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      Tensor *classInput3 = reshapeTensor(classInputTensor, 4, classInputDims3);
      saveDeviceTensor("data/classInputDims2.txt", classInput2, "%15.6e");
      saveDeviceTensor("data/classInputDims3.txt", classInput3, "%15.6e");
+#endif
      // filter top-n-detection
      Tensor *mulResTensorCopy = cloneTensor(mulResTensor, D2D);
      tensorIndexSort(mulResTensorCopy, orderDevice);
@@ -438,6 +448,7 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      pickElements(reduceArgResTensor->data, finalClassTensor->data, 1, orderDevice, TOP_N_DETECTION);
      pickElements(bboxResTensor->data, finalBboxTensor->data, OUTPUT_BBOX_SIZE, orderDevice, TOP_N_DETECTION);
 
+#ifndef NDEBUG
      FILE * sort_file = fopen("sort.txt", "w");
      int *orderHost2 = (int *)cloneMem(orderDevice, anchorsNum * sizeof(int), D2H);
      for (int i = 0; i < anchorsNum; i++)
@@ -446,6 +457,7 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      saveDeviceTensor("data/finalClassTensor.txt", finalClassTensor, "%15.6e");
      saveDeviceTensor("data/finalProbsTensor.txt", finalProbsTensor, "%15.6e");
      saveDeviceTensor("data/finalBboxTensor.txt", finalBboxTensor, "%15.6e");
+#endif
 
      CHECK(cudaMemcpyAsync(preds->prob, finalProbsTensor->data, finalProbsTensor->len*sizeof(float), cudaMemcpyDeviceToHost, stream));
      CHECK(cudaMemcpyAsync(preds->klass, finalClassTensor->data, finalClassTensor->len*sizeof(float), cudaMemcpyDeviceToHost, stream));
@@ -470,6 +482,12 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      CHECK(cudaFree(classTransTensor->data));
      CHECK(cudaFree(confTransTensor->data));
      CHECK(cudaFree(bboxTransTensor->data));
+     CHECK(cudaFree(classTransWorkspace[0]));
+     CHECK(cudaFree(classTransWorkspace[1]));
+     CHECK(cudaFree(confTransWorkspace[0]));
+     CHECK(cudaFree(confTransWorkspace[1]));
+     CHECK(cudaFree(bboxTransWorkspace[0]));
+     CHECK(cudaFree(bboxTransWorkspace[1]));
      CHECK(cudaFree(reduceMaxResTensor->data));
      CHECK(cudaFree(reduceArgResTensor->data));
      CHECK(cudaFree(mulResTensor->data));
