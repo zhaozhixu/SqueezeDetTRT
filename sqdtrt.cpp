@@ -1,11 +1,11 @@
 #include <cassert>
-
 #include <fstream>
 #include <sstream>
 #include <iostream>
 #include <cmath>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <dirent.h>
 #include <time.h>
 #include <cuda_runtime_api.h>
 #include <cudnn.h>
@@ -16,10 +16,13 @@
 #include <algorithm>
 #include <opencv2/opencv.hpp>
 #include <cstdio>
-#include <dirent.h>
 #include <unistd.h>
+#include <err.h>
 #include <thrust/sort.h>
 #include <thrust/execution_policy.h>
+
+// #define _GNU_SOURCE
+#include <getopt.h>
 
 #include "NvCaffeParser.h"
 #include "NvInferPlugin.h"
@@ -524,6 +527,8 @@ void APIToModel(unsigned int maxBatchSize, IHostMemory **convModelStream, IHostM
 float *prepareData(float *data, std::string img_name, float *img_width, float *img_height)
 {
      cv::Mat image = readImage(img_name, INPUT_W, INPUT_H, img_width, img_height);
+     if (image::data == NULL)
+          return NULL;
 
      int volChl = INPUT_H*INPUT_W;
      for (int c = 0; c < INPUT_C; ++c)
@@ -608,17 +613,62 @@ void fprintResult(FILE *fp, struct predictions *preds)
      }
 }
 
-int main(int argc, char** argv)
-{
-     if (argc < 3) {
-          printf("usage: %s IMAGE_DIR RESULT_DIR\n", argv[0]);
-          exit(EXIT_SUCCESS);
-     }
+static const struct option longopts[] = {
+     {"eval-list", 1, NULL, 'e'},
+     {"help", 0, NULL, 'h'},
+     {0, 0, 0, 0}
+};
 
-     std::vector<std::string> imageList = getImageList(argv[1]);
+static const char *usage = "Usage: sqdtrt [-e EVAL_LIST_FILE] IMAGE_DIR RESULT_DIR\n\
+Apply SqueezeDet detection algorithm to images in IMAGE_DIR.\n\
+Print detection results one text file per image in RESULT_DIR in KITTI dataset format.\n\
+\n\
+Options:\n\
+       -e, --eval-list=EVAL_LIST_FILE          provide an evaluation list file which contains\n\
+                                               the image names (without extension names)\n\
+                                               in IMAGE_DIR to be evaluated\n\
+       -h, --help                              print this help and exit\n";
+
+static void print_usage_and_exit()
+{
+     fputs(usage, stderr);
+     exit(EXIT_FAILURE);
+}
+
+int main(int argc, char *argv[])
+{
+     int opt, optindex;
+     char *img_dir, *result_dir, *eval_list;
+     while ((opt = getopt_long(argc, argv, ":i:r:e:h", longopts, &optindex)) != -1) {
+          switch (opt) {
+          case 'e':
+               eval_list = optarg;
+               break;
+          case 'h':
+               print_usage_and_exit();
+               break;
+          case ':':
+               fprintf(stderr, "option --%s needs a value\n", longopts[optindex].name);
+               break;
+          case '?':
+               fprintf(stderr, "unknown option %c\n", optopt);
+               break;
+          }
+     }
+     if (optind >= argc)
+          print_usage_and_exit();
+     img_dir = argv[optind++];
+     result_dir = argv[optind];
+     if (opendir(result_dir) == NULL) {
+          if (mkdir(result_dir, S_IRUSR|S_IWUSR|S_IXUSR|S_IRGRP|S_IXGRP|S_IROTH|S_IXOTH) == -1)
+               err(EXIT_FAILURE, "%s", result_dir);
+     } else
+          close(result_dir);
+
+     std::vector<std::string> imageList = getImageList(img_dir, eval_list);
      printf("image number: %ld\n", imageList.size());
-     char *resultDir = argv[2];
-     char *resultPath = path_alloc(NULL);
+     char *result_dir = argv[2];
+     char *result_file_path = path_alloc(NULL);
      FILE *res_fp;
      float img_width, img_height;
      float *data = new float[INPUT_C * INPUT_H * INPUT_W];
@@ -644,11 +694,12 @@ int main(int argc, char** argv)
 
      // run inference
      for (int i = 0; i < imageList.size(); i++) {
-          prepareData(data, imageList[i], &img_width, &img_height);
+          if (prepareData(data, imageList[i], &img_width, &img_height) == NULL)
+               continue;
           doInference(*convContext, *interpretContext, data, anchors, img_width, img_height, &preds, INPUT_N);
           detectionFilter(&preds, NMS_THRESH, PROB_THRESH);
-          sprintResultFilePath(resultPath, imageList[i].c_str(), resultDir);
-          res_fp = fopen(resultPath, "w");
+          sprintResultFilePath(result_file_path, imageList[i].c_str(), result_dir);
+          res_fp = fopen(result_file_path, "w");
           fprintResult(res_fp, &preds);
           fclose(res_fp);
      }
@@ -660,7 +711,7 @@ int main(int argc, char** argv)
      interpretEngine->destroy();
      runtime->destroy();
 
-     free(resultPath);
+     free(result_file_path);
      delete[] data;
      delete[] anchors;
      delete[] preds.prob;

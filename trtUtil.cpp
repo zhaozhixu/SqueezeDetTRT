@@ -8,6 +8,8 @@
 #include <fstream>
 #include "trtUtil.h"
 
+#define IMG_NAME_SIZE_GUESS 1024
+
 static const char *imageFormat[] = {"jpeg", "jpg", "png", "ppm", "bmp", NULL};
 
 static int isImageFile(char *name)
@@ -26,7 +28,7 @@ static int isImageFile(char *name)
 
 static char *changeSuffix(char *name, const char *new_suffix)
 {
-     assert(strlen(new_suffix) > 0 && strlen(name) > 0);
+     assert(name && new_suffix);
      char *suffix;
 
      if ((suffix = strrchr(name, '.')) == NULL) {
@@ -39,11 +41,30 @@ static char *changeSuffix(char *name, const char *new_suffix)
      return name;
 }
 
-std::vector<std::string> getImageList(const char *pathname)
+std::vector<std::string> getImageList(const char *pathname, const char *eval_list)
 {
      struct dirent *dirp;
      DIR *dp;
+     FILE *fp;
      std::vector<std::string> imgList;
+     std::vector<std::string> evalList;
+     std::vector<std::string>::iterator it;
+
+     if (eval_list) {
+          long img_name_size;
+          char *img_name;
+          if ((img_name_size = pathconf(pathname, _PC_NAME_MAX)) == -1)
+               img_name_size = IMG_NAME_SIZE_GUESS;
+          if ((img_name = (char *)malloc(img_name_size)) == NULL)
+               err(EXIT_FAILURE, "error malloc img_name in getImageList");
+
+          if ((fp = fopen(eval_list, "r")) == NULL)
+               err(EXIT_FAILURE, "%s", eval_list);
+          while (scanf("%s", img_name) != EOF)
+               evalList.push_back(std::string(img_name));
+          free(img_name);
+          fclose(fp);
+     }
 
      // if (stat(pathname, &statbuf) < 0) {
      //      perror("stat failed");
@@ -59,6 +80,13 @@ std::vector<std::string> getImageList(const char *pathname)
      while ((dirp = readdir(dp)) != NULL) {
           if (!isImageFile(dirp->d_name) || !strcmp(dirp->d_name, ".") || !strcmp(dirp->d_name, ".."))
                continue;
+          if (eval_list) {
+               char *img_name_cpy = (char *)malloc(sizeof(char) * (strlen(dirp->d_name) + 1));
+               strcpy(img_name_cpy, dirp->d_name);
+               changeSuffix(img_name_cpy, "");
+               it = std::find(evalList.begin(), evalList.end(), std::string(img_name_cpy));
+               free(img_name_cpy);
+          }
           imgList.push_back(std::string(pathname) + std::string("/") + std::string(dirp->d_name));
      }
      closedir(dp);
@@ -72,7 +100,7 @@ char *sprintResultFilePath(char *buf, const char *img_name, const char *res_dir)
           err(EXIT_FAILURE, "%s", res_dir);
      closedir(dp);
 
-     char *img_name_cpy = (char *)malloc(sizeof(char) * (strlen(img_name) + 1));
+     char *img_name_cpy = (char *)malloc(sizeof(char) * (strlen(img_name) + strlen(".txt") + 1));
      strcpy(img_name_cpy, img_name);
      char *file_name;
      if ((file_name = strrchr(img_name_cpy, '/')) == NULL)
@@ -126,8 +154,13 @@ std::map<std::string, Weights> loadWeights(const std::string file)
 cv::Mat readImage(const std::string& filename, int width, int height, float *img_width, float *img_height)
 {
     cv::Mat img = cv::imread(filename);
-    printf("filename: %s\t", filename.c_str());
-    printf("img.total(): %ld\t", img.total());
+    printf("filename: %s  ", filename.c_str()); // TODO: move to somewhere else
+    printf("img.total(): %ld  ", img.total());
+    if (img::data == NULL) {
+         printf("error reading image\n");
+         return img;
+    }
+
     if (img_width && img_height) {
          *img_width = img.size().width;
          *img_height = img.size().height;
