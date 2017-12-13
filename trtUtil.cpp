@@ -7,6 +7,7 @@
 #include <opencv2/opencv.hpp>
 #include <fstream>
 #include "trtUtil.h"
+#include "sdt_alloc.h"
 
 #define IMG_NAME_SIZE_GUESS 1024
 
@@ -33,9 +34,7 @@ static char *changeSuffix(char *name, const char *new_suffix)
 
      if ((suffix = strrchr(name, '.')) == NULL) {
           suffix = name + strlen(name);
-          *suffix = '.';
      }
-     suffix++;
      strcpy(suffix, new_suffix);
 
      return name;
@@ -43,37 +42,26 @@ static char *changeSuffix(char *name, const char *new_suffix)
 
 std::vector<std::string> getImageList(const char *pathname, const char *eval_list)
 {
+     long img_name_size;
+     char *img_name;
      struct dirent *dirp;
      DIR *dp;
      FILE *fp;
      std::vector<std::string> imgList;
-     std::vector<std::string> evalList;
-     std::vector<std::string>::iterator it;
+     std::map<std::string, int> evalMap;
+
+     if ((img_name_size = pathconf(pathname, _PC_NAME_MAX)) == -1)
+          img_name_size = IMG_NAME_SIZE_GUESS;
+     img_name = (char *)sdt_alloc(img_name_size);
 
      if (eval_list) {
-          long img_name_size;
-          char *img_name;
-          if ((img_name_size = pathconf(pathname, _PC_NAME_MAX)) == -1)
-               img_name_size = IMG_NAME_SIZE_GUESS;
-          if ((img_name = (char *)malloc(img_name_size)) == NULL)
-               err(EXIT_FAILURE, "error malloc img_name in getImageList");
-
           if ((fp = fopen(eval_list, "r")) == NULL)
                err(EXIT_FAILURE, "%s", eval_list);
-          while (scanf("%s", img_name) != EOF)
-               evalList.push_back(std::string(img_name));
-          free(img_name);
+          while (fscanf(fp, "%s", img_name) != EOF) {
+               evalMap[std::string(img_name)] = 1;
+          }
           fclose(fp);
      }
-
-     // if (stat(pathname, &statbuf) < 0) {
-     //      perror("stat failed");
-     //      exit(EXIT_FAILURE);
-     // }
-     // if (S_ISDIR(statbuf.st_mode) == 0) {
-     //      fprintf(stderr, "'%s' not a directory.\n", pathname);
-     //      exit(EXIT_FAILURE);
-     // }
      if ((dp = opendir(pathname)) == NULL)
           err(EXIT_FAILURE, "%s", pathname);
 
@@ -81,14 +69,15 @@ std::vector<std::string> getImageList(const char *pathname, const char *eval_lis
           if (!isImageFile(dirp->d_name) || !strcmp(dirp->d_name, ".") || !strcmp(dirp->d_name, ".."))
                continue;
           if (eval_list) {
-               char *img_name_cpy = (char *)malloc(sizeof(char) * (strlen(dirp->d_name) + 1));
-               strcpy(img_name_cpy, dirp->d_name);
-               changeSuffix(img_name_cpy, "");
-               it = std::find(evalList.begin(), evalList.end(), std::string(img_name_cpy));
-               free(img_name_cpy);
+               strcpy(img_name, dirp->d_name);
+               changeSuffix(img_name, "");
+               if (evalMap.count(std::string(img_name)) > 0)
+                    imgList.push_back(std::string(pathname) + std::string("/") + std::string(dirp->d_name));
+               continue;
           }
           imgList.push_back(std::string(pathname) + std::string("/") + std::string(dirp->d_name));
      }
+     sdt_free(img_name);
      closedir(dp);
      return imgList;
 }
@@ -100,7 +89,7 @@ char *sprintResultFilePath(char *buf, const char *img_name, const char *res_dir)
           err(EXIT_FAILURE, "%s", res_dir);
      closedir(dp);
 
-     char *img_name_cpy = (char *)malloc(sizeof(char) * (strlen(img_name) + strlen(".txt") + 1));
+     char *img_name_cpy = (char *)sdt_alloc(sizeof(char) * (strlen(img_name) + strlen(".txt") + 1));
      strcpy(img_name_cpy, img_name);
      char *file_name;
      if ((file_name = strrchr(img_name_cpy, '/')) == NULL)
@@ -108,8 +97,8 @@ char *sprintResultFilePath(char *buf, const char *img_name, const char *res_dir)
      else
           file_name++;
      sprintf(buf, "%s/%s", res_dir, file_name);
-     changeSuffix(buf, "txt");
-     free(img_name_cpy);
+     changeSuffix(buf, ".txt");
+     sdt_free(img_name_cpy);
      return buf;
 }
 
@@ -130,7 +119,7 @@ std::map<std::string, Weights> loadWeights(const std::string file)
         input >> name >> std::dec >> type >> size;
         wt.type = static_cast<DataType>(type);
         if (wt.type == DataType::kFLOAT) {
-            uint32_t *val = reinterpret_cast<uint32_t*>(malloc(sizeof(val) * size)); // wrong sizeof oprand
+            uint32_t *val = reinterpret_cast<uint32_t*>(sdt_alloc(sizeof(val) * size)); // TODO: wrong sizeof oprand
             for (uint32_t x = 0, y = size; x < y; ++x)
             {
                 input >> std::hex >> val[x];
@@ -138,7 +127,7 @@ std::map<std::string, Weights> loadWeights(const std::string file)
             }
             wt.values = val;
         } else if (wt.type == DataType::kHALF) {
-            uint16_t *val = reinterpret_cast<uint16_t*>(malloc(sizeof(val) * size)); // wrong sizeof oprand
+            uint16_t *val = reinterpret_cast<uint16_t*>(sdt_alloc(sizeof(val) * size)); // wrong sizeof oprand
             for (uint32_t x = 0, y = size; x < y; ++x)
             {
                 input >> std::hex >> val[x];
@@ -156,7 +145,7 @@ cv::Mat readImage(const std::string& filename, int width, int height, float *img
     cv::Mat img = cv::imread(filename);
     printf("filename: %s  ", filename.c_str()); // TODO: move to somewhere else
     printf("img.total(): %ld  ", img.total());
-    if (img::data == NULL) {
+    if (img.data == NULL) {
          printf("error reading image\n");
          return img;
     }

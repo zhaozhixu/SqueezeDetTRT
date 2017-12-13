@@ -7,6 +7,7 @@
 #include "tensorCuda.h"
 #include "tensorUtil.h"
 #include "errorHandle.h"
+#include "sdt_alloc.h"
 
 #define MAXDIM 8
 #define max(a, b) ((a) > (b) ? (a) : (b))
@@ -63,25 +64,21 @@ void *cloneMem(const void *src, size_t size, CloneKind kind)
      void *p;
      switch (kind) {
      case H2H:
-          p = malloc(size);
-          assert(p);
+          p = sdt_alloc(size);
           memmove(p, src, size);
           return p;
      case H2D:
           checkError(cudaMalloc(&p, size));
-          assert(p);
           checkError(cudaMemcpy(p, src, size, cudaMemcpyHostToDevice));
           return p;
      case D2D:
           assert(isDeviceMem(src));
           checkError(cudaMalloc(&p, size));
-          assert(p);
           checkError(cudaMemcpy(p, src, size, cudaMemcpyDeviceToDevice));
           return p;
      case D2H:
           assert(isDeviceMem(src));
-          p = malloc(size);
-          assert(p);
+          p = sdt_alloc(size);
           checkError(cudaMemcpy(p, src, size, cudaMemcpyDeviceToHost));
           return p;
      default:
@@ -106,15 +103,13 @@ void *repeatMem(void *data, size_t size, int times, CloneKind kind)
      int i;
      switch (kind) {
      case H2H:
-          dst = p = malloc(size * times);
-          assert(p);
+          dst = p = sdt_alloc(size * times);
           for (i = 0; i < times; i++, p = (char *)p + size * times)
                memmove(p, data, size);
           return dst;
      case H2D:
           checkError(cudaMalloc(&p, size * times));
           dst = p;
-          assert(p);
           for (i = 0; i < times; i++, p = (char *)p + size * times)
                checkError(cudaMemcpy(p, data, size, cudaMemcpyHostToDevice));
           return dst;
@@ -122,14 +117,12 @@ void *repeatMem(void *data, size_t size, int times, CloneKind kind)
           assert(isDeviceMem(data));
           checkError(cudaMalloc(&p, size * times));
           dst = p;
-          assert(p);
           for (i = 0; i < times; i++, p = (char *)p + size * times)
                checkError(cudaMemcpy(p, data, size, cudaMemcpyDeviceToDevice));
           return dst;
      case D2H:
           assert(isDeviceMem(data));
-          dst = p = malloc(size * times);
-          assert(p);
+          dst = p = sdt_alloc(size * times);
           for (i = 0; i < times; i++, p = (char *)p + size * times)
                checkError(cudaMemcpy(p, data, size, cudaMemcpyDeviceToHost));
           return dst;
@@ -154,10 +147,10 @@ int computeLength(int ndim, const int *dims)
 
 Tensor *createTensor(float *data, int ndim, const int *dims)
 {
-     Tensor *t = (Tensor *)malloc(sizeof(Tensor));
+     Tensor *t = (Tensor *)sdt_alloc(sizeof(Tensor));
      t->data = data;
      t->ndim = ndim;
-     t->dims = (int *)malloc(sizeof(int) * ndim);
+     t->dims = (int *)sdt_alloc(sizeof(int) * ndim);
      memmove(t->dims, dims, sizeof(int) * ndim);
      t->len = computeLength(ndim, dims);
      return t;
@@ -170,12 +163,10 @@ Tensor *mallocTensor(int ndim, const int* dims, const MallocKind mkind)
 
      switch (mkind) {
      case HOST:
-          f = (float *)malloc(t->len * sizeof(float));
-          assert(f);
+          f = (float *)sdt_alloc(t->len * sizeof(float));
           break;
      case DEVICE:
-          cudaMalloc(&f, t->len * sizeof(float));
-          assert(f);
+          checkError(cudaMalloc(&f, t->len * sizeof(float)));
           break;
      default:
           fprintf(stderr, "unknown MallocKind %d\n", mkind);
@@ -277,13 +268,13 @@ void saveDeviceTensor(const char *file_name, const Tensor *d_tensor, const char 
 /*      assert(dim <= src->ndim && dim >= 0); */
 /*      assert(len+start <= src->dims[dim]); */
 
-/*      Tensor *dst = (Tensor *)malloc(sizeof(Tensor)); /\* new tensor *\/ */
+/*      Tensor *dst = (Tensor *)sdt_alloc(sizeof(Tensor)); /\* new tensor *\/ */
 /*      dst->ndim = src->ndim; */
-/*      dst->dims = (int *)malloc(sizeof(int) * dst->ndim); */
+/*      dst->dims = (int *)sdt_alloc(sizeof(int) * dst->ndim); */
 /*      memmove(dst->dims, src->dims, sizeof(int) * dst->ndim); */
 /*      dst->dims[dim] = len; */
 /*      dst->len = src->len / src->dims[dim] * len; */
-/*      dst->data = (float *)malloc(dst->len * sizeof(float)); */
+/*      dst->data = (float *)sdt_alloc(dst->len * sizeof(float)); */
 /*      return dst; */
 /* } */
 
@@ -317,9 +308,9 @@ Tensor *createSlicedTensor(const Tensor *src, int dim, int start, int len)
      assert(dim <= MAXDIM);
      assert(len+start <= src->dims[dim]);
 
-     Tensor *dst = (Tensor *)malloc(sizeof(Tensor)); /* new tensor */
+     Tensor *dst = (Tensor *)sdt_alloc(sizeof(Tensor)); /* new tensor */
      dst->ndim = src->ndim;
-     dst->dims = (int *)malloc(sizeof(int) * dst->ndim);
+     dst->dims = (int *)sdt_alloc(sizeof(int) * dst->ndim);
      memmove(dst->dims, src->dims, sizeof(int) * dst->ndim);
      dst->dims[dim] = len;
      dst->len = src->len / src->dims[dim] * len;
@@ -383,9 +374,9 @@ Tensor *createReducedTensor(const Tensor *src, int dim)
      assert(isTensorValid(src));
      assert(dim < src->ndim && dim >= 0);
 
-     Tensor *dst = (Tensor *)malloc(sizeof(Tensor));
+     Tensor *dst = (Tensor *)sdt_alloc(sizeof(Tensor));
      dst->ndim = src->ndim;
-     dst->dims = (int *)malloc(sizeof(int) * dst->ndim);
+     dst->dims = (int *)sdt_alloc(sizeof(int) * dst->ndim);
      memmove(dst->dims, src->dims, sizeof(int) * dst->ndim);
      dst->dims[dim] = 1;
      dst->len = computeLength(dst->ndim, dst->dims);

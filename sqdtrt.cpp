@@ -29,7 +29,7 @@
 #include "common.h"
 #include "tensorUtil.h"
 #include "trtUtil.h"
-#include "path_alloc.h"
+#include "sdt_alloc.h"
 
 static Logger gLogger;
 using namespace nvinfer1;
@@ -256,7 +256,7 @@ createConvEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
      // Once we have built the cuda engine, we can release all of our held memory.
      for (auto &mem : weightMap)
      {
-          free((void*)(mem.second.values));
+          sdt_free((void*)(mem.second.values));
      }
      return engine;
 }
@@ -378,8 +378,7 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      Tensor *anchorsDeviceTensor = createTensor(anchorsDevice, 5, anchorsDeviceDims);
 
      int *orderDevice, *orderHost; // for top-n-detecion
-     orderHost = (int *)malloc(anchorsNum * sizeof(int));
-     assert(orderHost);
+     orderHost = (int *)sdt_alloc(anchorsNum * sizeof(int));
      for (int i = 0; i < anchorsNum; i++)
           orderHost[i] = i;
      orderDevice = (int *)cloneMem(orderHost, anchorsNum * sizeof(int), H2D);
@@ -457,6 +456,7 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      for (int i = 0; i < anchorsNum; i++)
           fprintf(sort_file, "%d\n", orderHost2[i]);
      fclose(sort_file);
+     sdt_free(orderHost2);
      saveDeviceTensor("data/finalClassTensor.txt", finalClassTensor, "%15.6e");
      saveDeviceTensor("data/finalProbsTensor.txt", finalProbsTensor, "%15.6e");
      saveDeviceTensor("data/finalBboxTensor.txt", finalBboxTensor, "%15.6e");
@@ -499,7 +499,7 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      CHECK(cudaFree(anchorsDevice));
      CHECK(cudaFree(orderDevice));
      CHECK(cudaFree(mulResTensorCopy->data))
-     free(orderHost);
+     sdt_free(orderHost);
 }
 
 // maxBatch - NB must be at least as large as the batch we want to run with)
@@ -527,7 +527,7 @@ void APIToModel(unsigned int maxBatchSize, IHostMemory **convModelStream, IHostM
 float *prepareData(float *data, std::string img_name, float *img_width, float *img_height)
 {
      cv::Mat image = readImage(img_name, INPUT_W, INPUT_H, img_width, img_height);
-     if (image::data == NULL)
+     if (image.data == NULL)
           return NULL;
 
      int volChl = INPUT_H*INPUT_W;
@@ -638,8 +638,9 @@ static void print_usage_and_exit()
 int main(int argc, char *argv[])
 {
      int opt, optindex;
-     char *img_dir, *result_dir, *eval_list;
-     while ((opt = getopt_long(argc, argv, ":i:r:e:h", longopts, &optindex)) != -1) {
+     DIR *dp;
+     char *img_dir = NULL, *result_dir = NULL, *eval_list = NULL;
+     while ((opt = getopt_long(argc, argv, ":e:h", longopts, &optindex)) != -1) {
           switch (opt) {
           case 'e':
                eval_list = optarg;
@@ -659,17 +660,16 @@ int main(int argc, char *argv[])
           print_usage_and_exit();
      img_dir = argv[optind++];
      result_dir = argv[optind];
-     if (opendir(result_dir) == NULL) {
+     if ((dp = opendir(result_dir)) == NULL) {
           if (mkdir(result_dir, S_IRUSR|S_IWUSR|S_IXUSR|S_IRGRP|S_IXGRP|S_IROTH|S_IXOTH) == -1)
                err(EXIT_FAILURE, "%s", result_dir);
      } else
-          close(result_dir);
+          closedir(dp);
 
      std::vector<std::string> imageList = getImageList(img_dir, eval_list);
      printf("image number: %ld\n", imageList.size());
-     char *result_dir = argv[2];
-     char *result_file_path = path_alloc(NULL);
-     FILE *res_fp;
+     char *result_file_path = sdt_path_alloc(NULL);
+     FILE *result_fp;
      float img_width, img_height;
      float *data = new float[INPUT_C * INPUT_H * INPUT_W];
      float *anchors = prepareAnchors(ANCHOR_SHAPE, INPUT_W, INPUT_H, INPUT_N, CONVOUT_H, CONVOUT_W, ANCHORS_PER_GRID);
@@ -699,9 +699,9 @@ int main(int argc, char *argv[])
           doInference(*convContext, *interpretContext, data, anchors, img_width, img_height, &preds, INPUT_N);
           detectionFilter(&preds, NMS_THRESH, PROB_THRESH);
           sprintResultFilePath(result_file_path, imageList[i].c_str(), result_dir);
-          res_fp = fopen(result_file_path, "w");
-          fprintResult(res_fp, &preds);
-          fclose(res_fp);
+          result_fp = fopen(result_file_path, "w");
+          fprintResult(result_fp, &preds);
+          fclose(result_fp);
      }
 
      // destroy the engine
@@ -711,7 +711,7 @@ int main(int argc, char *argv[])
      interpretEngine->destroy();
      runtime->destroy();
 
-     free(result_file_path);
+     sdt_free(result_file_path);
      delete[] data;
      delete[] anchors;
      delete[] preds.prob;
