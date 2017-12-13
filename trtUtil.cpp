@@ -40,6 +40,23 @@ static char *changeSuffix(char *name, const char *new_suffix)
      return name;
 }
 
+char *getFileName(char *buf, const char *path)
+{
+     assert(buf);
+     char *name, *path_copy;
+
+     path_copy = (char *)sdt_alloc(strlen(path) + 1);
+     strcpy(path_copy, path);
+     if ((name = strrchr(path_copy, '/')) == NULL)
+          name = path_copy;
+     else
+          name++;
+     strcpy(buf, name);
+     sdt_free(path_copy);
+
+     return buf;
+}
+
 std::vector<std::string> getImageList(const char *pathname, const char *eval_list)
 {
      long img_name_size;
@@ -143,8 +160,7 @@ std::map<std::string, Weights> loadWeights(const std::string file)
 cv::Mat readImage(const std::string& filename, int width, int height, float *img_width, float *img_height)
 {
     cv::Mat img = cv::imread(filename);
-    printf("filename: %s  ", filename.c_str()); // TODO: move to somewhere else
-    printf("img.total(): %ld  ", img.total());
+    // printf("img.total(): %ld  ", img.total());
     if (img.data == NULL) {
          printf("error reading image\n");
          return img;

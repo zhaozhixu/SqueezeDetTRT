@@ -6,6 +6,7 @@
 
 using namespace nvinfer1;
 
+char *getFileName(char *buf, const char *path);
 std::vector<std::string> getImageList(const char *pathname, const char *eval_list);
 char *sprintResultFilePath(char *buf, const char *img_name, const char *res_dir);
 std::map<std::string, Weights> loadWeights(const std::string file);

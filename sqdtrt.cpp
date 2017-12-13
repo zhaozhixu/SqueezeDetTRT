@@ -86,6 +86,38 @@ struct predictions {
      int num;
 };
 
+static int anchorsNum;
+static int inputIndex, convoutIndex, classInputIndex, confInputIndex, classOutputIndex, confOutputIndex;
+
+// device buffers
+static void *convBuffers[2], *interpretBuffers[4];
+static float *bboxInput; // don't need to go into interpret engine
+static int *transAxesDevice;
+static Tensor *convoutTensor;
+static Tensor *classInputTensor;
+static Tensor *confInputTensor;
+static Tensor *bboxInputTensor;
+static Tensor *classOutputTensor;
+static Tensor *confOutputTensor;
+static Tensor *bboxOutputTensor;
+static Tensor *classTransTensor;
+static Tensor *confTransTensor;
+static Tensor *bboxTransTensor;
+static int *classTransWorkspace[2], *confTransWorkspace[2], *bboxTransWorkspace[2];
+static float *anchorsDevice, *imgWidthDevice, *imgHeightDevice;
+static Tensor *reduceMaxResTensor;
+static Tensor *reduceArgResTensor;
+static Tensor *mulResTensor;
+static Tensor *bboxResTensor;
+static Tensor *anchorsDeviceTensor;
+static int *orderDevice, *orderHost; // for top-n-detecion
+static Tensor *finalClassTensor;
+static Tensor *finalProbsTensor;
+static Tensor *finalBboxTensor;
+static cudaStream_t stream;
+static cudaEvent_t start, stop;
+static float timeDetect;
+
 std::string locateFile(const std::string& input)
 {
      std::vector<std::string> dirs{"data/"};
@@ -294,28 +326,25 @@ createInterpretEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
 }
 
 // batch size is 1
-void doInference(IExecutionContext& convContext, IExecutionContext& interpretContext, float* input, float* anchors, float img_width, float img_height, struct predictions *preds, int batchSize)
+void setUpDevice(IExecutionContext *convContext, IExecutionContext *interpretContext, float* anchors, int batchSize)
 {
-     const ICudaEngine& convEngine = convContext.getEngine();
-     const ICudaEngine& interpretEngine = interpretContext.getEngine();
+     const ICudaEngine &convEngine = convContext->getEngine();
+     const ICudaEngine &interpretEngine = interpretContext->getEngine();
 
      assert(convEngine.getNbBindings() == 2);
      assert(interpretEngine.getNbBindings() == 4);
-     void* convBuffers[2];
-     void* interpretBuffers[4];
 
      // In order to bind the buffers, we need to know the names of the input and output tensors.
      // note that indices are guaranteed to be less than IEngine::getNbBindings()
-     int inputIndex = convEngine.getBindingIndex(INPUT_NAME),
-          convoutIndex = convEngine.getBindingIndex(CONVOUT_NAME),
-          classInputIndex = interpretEngine.getBindingIndex(CLASS_INPUT_NAME),
-          confInputIndex = interpretEngine.getBindingIndex(CONF_INPUT_NAME),
-          classOutputIndex = interpretEngine.getBindingIndex(CLASS_OUTPUT_NAME),
-          confOutputIndex = interpretEngine.getBindingIndex(CONF_OUTPUT_NAME);
+     inputIndex = convEngine.getBindingIndex(INPUT_NAME);
+     convoutIndex = convEngine.getBindingIndex(CONVOUT_NAME);
+     classInputIndex = interpretEngine.getBindingIndex(CLASS_INPUT_NAME);
+     confInputIndex = interpretEngine.getBindingIndex(CONF_INPUT_NAME);
+     classOutputIndex = interpretEngine.getBindingIndex(CLASS_OUTPUT_NAME);
+     confOutputIndex = interpretEngine.getBindingIndex(CONF_OUTPUT_NAME);
 
      // create GPU buffers and a stream
-     float *bboxInput; // don't need to go into interpret engine
-     int anchorsNum = batchSize * CONVOUT_W * CONVOUT_H * ANCHORS_PER_GRID;
+     anchorsNum = batchSize * CONVOUT_W * CONVOUT_H * ANCHORS_PER_GRID;
      size_t inputSize = batchSize * INPUT_C * INPUT_H * INPUT_W * sizeof(float);
      size_t convoutSize = batchSize * CONVOUT_H * CONVOUT_W * CONVOUT_C * sizeof(float);
      size_t classInputSize = batchSize * CONVOUT_H * CONVOUT_W * CLASS_SLICE_C * sizeof(float);
@@ -342,18 +371,17 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      int bboxOutputDims[] = {batchSize, ANCHORS_PER_GRID, OUTPUT_BBOX_SIZE, CONVOUT_H, CONVOUT_W};
      int bboxTransDims[] = {batchSize, CONVOUT_H, CONVOUT_W, ANCHORS_PER_GRID, OUTPUT_BBOX_SIZE};
      int transAxes[] = {0, 3, 4, 1, 2};
-     int *transAxesDevice = (int *)cloneMem(transAxes, sizeof(int) * 5, H2D);
-     Tensor *convoutTensor = createTensor((float *)convBuffers[convoutIndex], 4, convout_dims);
-     Tensor *classInputTensor = createTensor((float *)interpretBuffers[classInputIndex], 4, classInputDims);
-     Tensor *confInputTensor = createTensor((float *)interpretBuffers[confInputIndex], 4, confInputDims);
-     Tensor *bboxInputTensor = createTensor(bboxInput, 4, bboxInputDims);
-     Tensor *classOutputTensor = createTensor((float *)interpretBuffers[classOutputIndex], 5, classOutputDims);
-     Tensor *confOutputTensor = createTensor((float *)interpretBuffers[confOutputIndex], 5, confOutputDims);
-     Tensor *bboxOutputTensor = reshapeTensor(bboxInputTensor, 5, bboxOutputDims);
-     Tensor *classTransTensor = mallocTensor(5, classTransDims, DEVICE);
-     Tensor *confTransTensor = mallocTensor(5, confTransDims, DEVICE);
-     Tensor *bboxTransTensor = mallocTensor(5, bboxTransDims, DEVICE);
-     int *classTransWorkspace[2], *confTransWorkspace[2], *bboxTransWorkspace[2];
+     transAxesDevice = (int *)cloneMem(transAxes, sizeof(int) * 5, H2D);
+     convoutTensor = createTensor((float *)convBuffers[convoutIndex], 4, convout_dims);
+     classInputTensor = createTensor((float *)interpretBuffers[classInputIndex], 4, classInputDims);
+     confInputTensor = createTensor((float *)interpretBuffers[confInputIndex], 4, confInputDims);
+     bboxInputTensor = createTensor(bboxInput, 4, bboxInputDims);
+     classOutputTensor = createTensor((float *)interpretBuffers[classOutputIndex], 5, classOutputDims);
+     confOutputTensor = createTensor((float *)interpretBuffers[confOutputIndex], 5, confOutputDims);
+     bboxOutputTensor = reshapeTensor(bboxInputTensor, 5, bboxOutputDims);
+     classTransTensor = mallocTensor(5, classTransDims, DEVICE);
+     confTransTensor = mallocTensor(5, confTransDims, DEVICE);
+     bboxTransTensor = mallocTensor(5, bboxTransDims, DEVICE);
      CHECK(cudaMalloc(&classTransWorkspace[0], sizeof(int) * classTransTensor->ndim * classTransTensor->len));
      CHECK(cudaMalloc(&classTransWorkspace[1], sizeof(int) * classTransTensor->ndim * classTransTensor->len));
      CHECK(cudaMalloc(&confTransWorkspace[0], sizeof(int) * confTransTensor->ndim * confTransTensor->len));
@@ -361,7 +389,6 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      CHECK(cudaMalloc(&bboxTransWorkspace[0], sizeof(int) * bboxTransTensor->ndim * bboxTransTensor->len));
      CHECK(cudaMalloc(&bboxTransWorkspace[1], sizeof(int) * bboxTransTensor->ndim * bboxTransTensor->len));
 
-     float *anchorsDevice, *imgWidthDevice, *imgHeightDevice;
      size_t anchorsDeviceSize = anchorsNum * ANCHOR_SIZE * sizeof(float);
      anchorsDevice = (float *)cloneMem(anchors, anchorsDeviceSize, H2D);
 
@@ -371,43 +398,43 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      int bboxResDims[] = {batchSize, CONVOUT_H, CONVOUT_W, ANCHORS_PER_GRID, OUTPUT_BBOX_SIZE};
      // int anchorsDeviceDims[] = {batchSize, ANCHORS_PER_GRID, ANCHOR_SIZE, CONVOUT_H, CONVOUT_W};
      int anchorsDeviceDims[] = {batchSize, CONVOUT_H, CONVOUT_W, ANCHORS_PER_GRID, ANCHOR_SIZE};
-     Tensor *reduceMaxResTensor = mallocTensor(5, reduceMaxResDims, DEVICE);
-     Tensor *reduceArgResTensor = mallocTensor(5, reduceArgResDims, DEVICE);
-     Tensor *mulResTensor = mallocTensor(5, mulResDims, DEVICE);
-     Tensor *bboxResTensor = mallocTensor(5, bboxResDims, DEVICE);
-     Tensor *anchorsDeviceTensor = createTensor(anchorsDevice, 5, anchorsDeviceDims);
+     reduceMaxResTensor = mallocTensor(5, reduceMaxResDims, DEVICE);
+     reduceArgResTensor = mallocTensor(5, reduceArgResDims, DEVICE);
+     mulResTensor = mallocTensor(5, mulResDims, DEVICE);
+     bboxResTensor = mallocTensor(5, bboxResDims, DEVICE);
+     anchorsDeviceTensor = createTensor(anchorsDevice, 5, anchorsDeviceDims);
 
-     int *orderDevice, *orderHost; // for top-n-detecion
      orderHost = (int *)sdt_alloc(anchorsNum * sizeof(int));
      for (int i = 0; i < anchorsNum; i++)
           orderHost[i] = i;
      orderDevice = (int *)cloneMem(orderHost, anchorsNum * sizeof(int), H2D);
+     sdt_free(orderHost);
 
      int finalClassDims[] = {batchSize, TOP_N_DETECTION, 1};
      int finalProbsDims[] = {batchSize, TOP_N_DETECTION, 1};
      int finalBboxDims[] = {batchSize, TOP_N_DETECTION, OUTPUT_BBOX_SIZE};
-     Tensor *finalClassTensor = mallocTensor(3, finalClassDims, DEVICE);
-     Tensor *finalProbsTensor = mallocTensor(3, finalProbsDims, DEVICE);
-     Tensor *finalBboxTensor = mallocTensor(3, finalBboxDims, DEVICE);
+     finalClassTensor = mallocTensor(3, finalClassDims, DEVICE);
+     finalProbsTensor = mallocTensor(3, finalProbsDims, DEVICE);
+     finalBboxTensor = mallocTensor(3, finalBboxDims, DEVICE);
 
-     cudaStream_t stream;
      CHECK(cudaStreamCreate(&stream));
-
-     // timer create, timer start
-     cudaEvent_t start, stop;
-     float timeDetect;
      CHECK(cudaEventCreate(&start));
      CHECK(cudaEventCreate(&stop));
+}
+
+// batch size is 1
+void doInference(IExecutionContext *convContext, IExecutionContext *interpretContext, float* input, int inputSize, int img_width, int img_height, struct predictions *preds, int batchSize)
+{
      CHECK(cudaEventRecord(start, 0));
 
      // DMA the input to the GPU,  execute the batch asynchronously, and DMA it back:
      CHECK(cudaMemcpyAsync(convBuffers[inputIndex], input, inputSize, cudaMemcpyHostToDevice, stream));
 
-     convContext.enqueue(batchSize, convBuffers, stream, nullptr);
+     convContext->enqueue(batchSize, convBuffers, stream, nullptr);
      sliceTensor(convoutTensor, classInputTensor, 1, 0, CLASS_SLICE_C);
      sliceTensor(convoutTensor, confInputTensor, 1, CLASS_SLICE_C, CONF_SLICE_C);
      sliceTensor(convoutTensor, bboxInputTensor, 1, CLASS_SLICE_C + CONF_SLICE_C, BBOX_SLICE_C);
-     interpretContext.enqueue(batchSize, interpretBuffers, stream, nullptr);
+     interpretContext->enqueue(batchSize, interpretBuffers, stream, nullptr);
      transposeTensor(classOutputTensor, classTransTensor, transAxesDevice, classTransWorkspace);
      transposeTensor(confOutputTensor, confTransTensor, transAxesDevice, confTransWorkspace);
      transposeTensor(bboxOutputTensor, bboxTransTensor, transAxesDevice, bboxTransWorkspace);
@@ -446,6 +473,7 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      // filter top-n-detection
      Tensor *mulResTensorCopy = cloneTensor(mulResTensor, D2D);
      tensorIndexSort(mulResTensorCopy, orderDevice);
+     CHECK(cudaFree(mulResTensorCopy->data))
      pickElements(mulResTensor->data, finalProbsTensor->data, 1, orderDevice, TOP_N_DETECTION);
      pickElements(reduceArgResTensor->data, finalClassTensor->data, 1, orderDevice, TOP_N_DETECTION);
      pickElements(bboxResTensor->data, finalBboxTensor->data, OUTPUT_BBOX_SIZE, orderDevice, TOP_N_DETECTION);
@@ -466,12 +494,13 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      CHECK(cudaMemcpyAsync(preds->klass, finalClassTensor->data, finalClassTensor->len*sizeof(float), cudaMemcpyDeviceToHost, stream));
      CHECK(cudaMemcpyAsync(preds->bbox, finalBboxTensor->data, finalBboxTensor->len*sizeof(float), cudaMemcpyDeviceToHost, stream));
      CHECK(cudaStreamSynchronize(stream));
+}
 
+void cleanUpDevice()
+{
      // timer destroy
      CHECK(cudaEventDestroy(start));
      CHECK(cudaEventDestroy(stop));
-
-     printf("detect in %f ms\n", timeDetect);
 
      // release the stream and the buffers
      CHECK(cudaStreamDestroy(stream));
@@ -498,8 +527,6 @@ void doInference(IExecutionContext& convContext, IExecutionContext& interpretCon
      CHECK(cudaFree(transAxesDevice));
      CHECK(cudaFree(anchorsDevice));
      CHECK(cudaFree(orderDevice));
-     CHECK(cudaFree(mulResTensorCopy->data))
-     sdt_free(orderHost);
 }
 
 // maxBatch - NB must be at least as large as the batch we want to run with)
@@ -669,8 +696,10 @@ int main(int argc, char *argv[])
      std::vector<std::string> imageList = getImageList(img_dir, eval_list);
      printf("image number: %ld\n", imageList.size());
      char *result_file_path = sdt_path_alloc(NULL);
+     char *img_name_buf = sdt_path_alloc(NULL);
      FILE *result_fp;
      float img_width, img_height;
+     size_t inputSize = INPUT_C * INPUT_H * INPUT_W;
      float *data = new float[INPUT_C * INPUT_H * INPUT_W];
      float *anchors = prepareAnchors(ANCHOR_SHAPE, INPUT_W, INPUT_H, INPUT_N, CONVOUT_H, CONVOUT_W, ANCHORS_PER_GRID);
      struct predictions preds;
@@ -692,17 +721,24 @@ int main(int argc, char *argv[])
      IExecutionContext *convContext = convEngine->createExecutionContext();
      IExecutionContext *interpretContext = interpretEngine->createExecutionContext();
 
+     // malloc device buffers
+     setUpDevice(convContext, interpretContext, anchors, INPUT_N);
+
      // run inference
-     for (int i = 0; i < imageList.size(); i++) {
+     int img_list_size = imageList.size();
+     for (int i = 0; i < img_list_size; i++) {
+          printf("(%d/%d) filename: %s  ", i+1, img_list_size, getFileName(img_name_buf, imageList[i].c_str()));
           if (prepareData(data, imageList[i], &img_width, &img_height) == NULL)
                continue;
-          doInference(*convContext, *interpretContext, data, anchors, img_width, img_height, &preds, INPUT_N);
+          doInference(convContext, interpretContext, data, inputSize, img_width, img_height, &preds, INPUT_N);
+          printf("detect in %f ms\n", timeDetect);
           detectionFilter(&preds, NMS_THRESH, PROB_THRESH);
           sprintResultFilePath(result_file_path, imageList[i].c_str(), result_dir);
           result_fp = fopen(result_file_path, "w");
           fprintResult(result_fp, &preds);
           fclose(result_fp);
      }
+     cleanUpDevice();
 
      // destroy the engine
      convContext->destroy();
@@ -711,6 +747,7 @@ int main(int argc, char *argv[])
      interpretEngine->destroy();
      runtime->destroy();
 
+     sdt_free(img_name_buf);
      sdt_free(result_file_path);
      delete[] data;
      delete[] anchors;
