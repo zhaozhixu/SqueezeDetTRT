@@ -19,13 +19,16 @@ def draw_bboxes(img_dir, res_dir, bbox_dir):
         os.makedirs(bbox_dir)
 
     res_file_list = os.listdir(res_dir)
-    for res_name in res_file_list:
+    for i in range(len(res_file_list)):
+        res_name = res_file_list[i]
         img_name = re.sub(r'\.txt', '.png', res_name)
         img_path = os.path.join(img_dir, img_name)
         res_path = os.path.join(res_dir, res_name)
         bbox_name = re.sub(r'\.txt', '_bbox.png', res_name)
         bbox_path = os.path.join(bbox_dir, bbox_name)
 
+        sys.stdout.write("\r({:d}/{:d}) draw bbox: {:s}".format(i+1, len(res_file_list), bbox_name))
+        sys.stdout.flush()
         img = cv2.imread(img_path)
         res_file = open(res_path, "r")
         res_lines = res_file.readlines()
@@ -45,6 +48,7 @@ def draw_bboxes(img_dir, res_dir, bbox_dir):
             cv2.rectangle(img, (cords[0], cords[1]), (cords[2], cords[3]), (0, 255, 0))
             cv2.putText(img, klass+": "+prob, (cords[0], cords[1]), font, 0.5, (0, 255, 0))
 
+        sys.stdout.write("\n")
         cv2.imwrite(bbox_path, img)
 
 def main():

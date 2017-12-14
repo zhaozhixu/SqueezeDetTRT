@@ -110,7 +110,7 @@ static Tensor *reduceArgResTensor;
 static Tensor *mulResTensor;
 static Tensor *bboxResTensor;
 static Tensor *anchorsDeviceTensor;
-static int *orderDevice, *orderHost; // for top-n-detecion
+static int *orderDevice, *orderDeviceTmp; // for top-n-detecion
 static Tensor *finalClassTensor;
 static Tensor *finalProbsTensor;
 static Tensor *finalBboxTensor;
@@ -298,7 +298,7 @@ createInterpretEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
 {
      INetworkDefinition* network = builder->createNetwork();
 
-     auto class_tensor = network->addInput(CLASS_INPUT_NAME, dt, DimsNCHW{ANCHORS_PER_GRID, OUTPUT_CLS_SIZE, CONVOUT_W, CONVOUT_H});
+     auto class_tensor = network->addInput(CLASS_INPUT_NAME, dt, DimsNCHW{ANCHORS_PER_GRID, OUTPUT_CLS_SIZE, CONVOUT_H, CONVOUT_W});
      assert(class_tensor != nullptr);
      // auto confidence_tensor = network->addInput(CONF_INPUT_NAME, dt, DimsNCHW{INPUT_N, 1, 1, CONVOUT_W * CONVOUT_H * ANCHORS_PER_GRID});
      auto confidence_tensor = network->addInput(CONF_INPUT_NAME, dt, DimsCHW{1, 1, INPUT_N * CONVOUT_W * CONVOUT_H * ANCHORS_PER_GRID});
@@ -323,6 +323,27 @@ createInterpretEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
      // network->destroy(); // SIGSEGV, don't know why
 
      return engine;
+}
+
+// maxBatch - NB must be at least as large as the batch we want to run with)
+void APIToModel(unsigned int maxBatchSize, IHostMemory **convModelStream, IHostMemory **interpretModelStream)
+{
+     // create the builder
+     IBuilder* builder = createInferBuilder(gLogger);
+
+     // create the model to populate the network, then set the outputs and create an engine
+     ICudaEngine* convEngine = createConvEngine(maxBatchSize, builder, DataType::kFLOAT);
+     ICudaEngine* interpretEngine = createInterpretEngine(maxBatchSize, builder, DataType::kFLOAT);
+
+     assert(convEngine != nullptr);
+     assert(interpretEngine != nullptr);
+
+     // serialize the engine, then close everything down
+     (*convModelStream) = convEngine->serialize();
+     (*interpretModelStream) = interpretEngine->serialize();
+     convEngine->destroy();
+     interpretEngine->destroy();
+     builder->destroy();
 }
 
 // batch size is 1
@@ -404,17 +425,20 @@ void setUpDevice(IExecutionContext *convContext, IExecutionContext *interpretCon
      bboxResTensor = mallocTensor(5, bboxResDims, DEVICE);
      anchorsDeviceTensor = createTensor(anchorsDevice, 5, anchorsDeviceDims);
 
-     orderHost = (int *)sdt_alloc(anchorsNum * sizeof(int));
+     int *orderHost = (int *)sdt_alloc(anchorsNum * sizeof(int));
      for (int i = 0; i < anchorsNum; i++)
           orderHost[i] = i;
      orderDevice = (int *)cloneMem(orderHost, anchorsNum * sizeof(int), H2D);
+     orderDeviceTmp = (int *)cloneMem(orderHost, anchorsNum * sizeof(int), H2D);
      sdt_free(orderHost);
 
-     int finalClassDims[] = {batchSize, TOP_N_DETECTION, 1};
      int finalProbsDims[] = {batchSize, TOP_N_DETECTION, 1};
+     int finalClassDims[] = {batchSize, TOP_N_DETECTION, 1};
      int finalBboxDims[] = {batchSize, TOP_N_DETECTION, OUTPUT_BBOX_SIZE};
+     // finalProbsTensor shares data with mulResTensor
+     finalProbsTensor = createTensor(mulResTensor->data, 3, finalProbsDims);
+     // finalProbsTensor = mallocTensor(3, finalProbsDims, DEVICE);
      finalClassTensor = mallocTensor(3, finalClassDims, DEVICE);
-     finalProbsTensor = mallocTensor(3, finalProbsDims, DEVICE);
      finalBboxTensor = mallocTensor(3, finalBboxDims, DEVICE);
 
      CHECK(cudaStreamCreate(&stream));
@@ -471,15 +495,15 @@ void doInference(IExecutionContext *convContext, IExecutionContext *interpretCon
      saveDeviceTensor("data/classInputDims3.txt", classInput3, "%15.6e");
 #endif
      // filter top-n-detection
-     Tensor *mulResTensorCopy = cloneTensor(mulResTensor, D2D);
-     tensorIndexSort(mulResTensorCopy, orderDevice);
-     CHECK(cudaFree(mulResTensorCopy->data))
-     pickElements(mulResTensor->data, finalProbsTensor->data, 1, orderDevice, TOP_N_DETECTION);
-     pickElements(reduceArgResTensor->data, finalClassTensor->data, 1, orderDevice, TOP_N_DETECTION);
-     pickElements(bboxResTensor->data, finalBboxTensor->data, OUTPUT_BBOX_SIZE, orderDevice, TOP_N_DETECTION);
+     CHECK(cudaMemcpy(orderDeviceTmp, orderDevice, anchorsNum * sizeof(int), cudaMemcpyDeviceToDevice));
+     tensorIndexSort(mulResTensor, orderDeviceTmp);
+     // already sort mulResTensor (sharing data with finalProbsTensor), so we can skip this
+     // pickElements(mulResTensor->data, finalProbsTensor->data, 1, orderDeviceTmp, TOP_N_DETECTION);
+     pickElements(reduceArgResTensor->data, finalClassTensor->data, 1, orderDeviceTmp, TOP_N_DETECTION);
+     pickElements(bboxResTensor->data, finalBboxTensor->data, OUTPUT_BBOX_SIZE, orderDeviceTmp, TOP_N_DETECTION);
 
 #ifdef DEBUG
-     FILE * sort_file = fopen("sort.txt", "w");
+     FILE * sort_file = fopen("data/orderDevice.txt", "w");
      int *orderHost2 = (int *)cloneMem(orderDevice, anchorsNum * sizeof(int), D2H);
      for (int i = 0; i < anchorsNum; i++)
           fprintf(sort_file, "%d\n", orderHost2[i]);
@@ -527,27 +551,11 @@ void cleanUpDevice()
      CHECK(cudaFree(transAxesDevice));
      CHECK(cudaFree(anchorsDevice));
      CHECK(cudaFree(orderDevice));
-}
-
-// maxBatch - NB must be at least as large as the batch we want to run with)
-void APIToModel(unsigned int maxBatchSize, IHostMemory **convModelStream, IHostMemory **interpretModelStream)
-{
-     // create the builder
-     IBuilder* builder = createInferBuilder(gLogger);
-
-     // create the model to populate the network, then set the outputs and create an engine
-     ICudaEngine* convEngine = createConvEngine(maxBatchSize, builder, DataType::kFLOAT);
-     ICudaEngine* interpretEngine = createInterpretEngine(maxBatchSize, builder, DataType::kFLOAT);
-
-     assert(convEngine != nullptr);
-     assert(interpretEngine != nullptr);
-
-     // serialize the engine, then close everything down
-     (*convModelStream) = convEngine->serialize();
-     (*interpretModelStream) = interpretEngine->serialize();
-     convEngine->destroy();
-     interpretEngine->destroy();
-     builder->destroy();
+     CHECK(cudaFree(orderDeviceTmp));
+     // already freed mulResTensor data (sharing data with finalProbsTensor), so we can skip this
+     // CHECK(cudaFree(finalProbsTensor->data));
+     CHECK(cudaFree(finalClassTensor->data));
+     CHECK(cudaFree(finalBboxTensor->data));
 }
 
 // rearrange image data to [N, C, H, W] order
@@ -648,7 +656,7 @@ static const struct option longopts[] = {
 
 static const char *usage = "Usage: sqdtrt [-e EVAL_LIST_FILE] IMAGE_DIR RESULT_DIR\n\
 Apply SqueezeDet detection algorithm to images in IMAGE_DIR.\n\
-Print detection results one text file per image in RESULT_DIR in KITTI dataset format.\n\
+Print detection results to one text file per image in RESULT_DIR using KITTI dataset format.\n\
 \n\
 Options:\n\
        -e, --eval-list=EVAL_LIST_FILE          provide an evaluation list file which contains\n\
@@ -694,19 +702,19 @@ int main(int argc, char *argv[])
           closedir(dp);
 
      std::vector<std::string> imageList = getImageList(img_dir, eval_list);
-     printf("image number: %ld\n", imageList.size());
+     printf("number of images: %ld\n", imageList.size());
      char *result_file_path = sdt_path_alloc(NULL);
      char *img_name_buf = sdt_path_alloc(NULL);
      FILE *result_fp;
      float img_width, img_height;
-     size_t inputSize = INPUT_C * INPUT_H * INPUT_W;
-     float *data = new float[INPUT_C * INPUT_H * INPUT_W];
+     size_t inputSize = INPUT_C * INPUT_H * INPUT_W * sizeof(float);
+     float *data = (float *)sdt_alloc(sizeof(float) * INPUT_C * INPUT_H * INPUT_W);
      float *anchors = prepareAnchors(ANCHOR_SHAPE, INPUT_W, INPUT_H, INPUT_N, CONVOUT_H, CONVOUT_W, ANCHORS_PER_GRID);
      struct predictions preds;
-     preds.prob = new float[TOP_N_DETECTION];
-     preds.klass = new float[TOP_N_DETECTION];
-     preds.bbox = new float[TOP_N_DETECTION * OUTPUT_BBOX_SIZE];
-     preds.keep = new int[TOP_N_DETECTION];
+     preds.prob = (float *)sdt_alloc(sizeof(float) * TOP_N_DETECTION);
+     preds.klass = (float *)sdt_alloc(sizeof(float) * TOP_N_DETECTION);
+     preds.bbox = (float *)sdt_alloc(sizeof(float) * TOP_N_DETECTION * OUTPUT_BBOX_SIZE);
+     preds.keep = (int *)sdt_alloc(sizeof(int) * TOP_N_DETECTION);
      preds.num = TOP_N_DETECTION;
 
      // create engines
@@ -728,8 +736,10 @@ int main(int argc, char *argv[])
      int img_list_size = imageList.size();
      for (int i = 0; i < img_list_size; i++) {
           printf("(%d/%d) filename: %s  ", i+1, img_list_size, getFileName(img_name_buf, imageList[i].c_str()));
-          if (prepareData(data, imageList[i], &img_width, &img_height) == NULL)
+          if (prepareData(data, imageList[i], &img_width, &img_height) == NULL) {
+               printf("error reading image\n");
                continue;
+          }
           doInference(convContext, interpretContext, data, inputSize, img_width, img_height, &preds, INPUT_N);
           printf("detect in %f ms\n", timeDetect);
           detectionFilter(&preds, NMS_THRESH, PROB_THRESH);
@@ -749,11 +759,12 @@ int main(int argc, char *argv[])
 
      sdt_free(img_name_buf);
      sdt_free(result_file_path);
-     delete[] data;
-     delete[] anchors;
-     delete[] preds.prob;
-     delete[] preds.klass;
-     delete[] preds.bbox;
-     delete[] preds.keep;
+     sdt_free(data);
+     sdt_free(anchors);
+     sdt_free(preds.prob);
+     sdt_free(preds.klass);
+     sdt_free(preds.bbox);
+     sdt_free(preds.keep);
+
      return 0;
 }

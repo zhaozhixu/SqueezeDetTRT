@@ -10,7 +10,7 @@
 {														\
 	if (status != 0)									\
 	{													\
-		std::cout << "Cuda failure: " << status;		\
+		fprintf(stderr, "CUDA_ERROR(%d) %s: %s\n", status, cudaGetErrorName(status), cudaGetErrorString(status)); \
 		abort();										\
 	}													\
 }
