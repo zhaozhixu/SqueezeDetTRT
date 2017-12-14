@@ -104,7 +104,7 @@ static Tensor *classTransTensor;
 static Tensor *confTransTensor;
 static Tensor *bboxTransTensor;
 static int *classTransWorkspace[2], *confTransWorkspace[2], *bboxTransWorkspace[2];
-static float *anchorsDevice, *imgWidthDevice, *imgHeightDevice;
+static float *anchorsDevice;
 static Tensor *reduceMaxResTensor;
 static Tensor *reduceArgResTensor;
 static Tensor *mulResTensor;
@@ -520,7 +520,7 @@ void doInference(IExecutionContext *convContext, IExecutionContext *interpretCon
      CHECK(cudaStreamSynchronize(stream));
 }
 
-void cleanUpDevice()
+void cleanUp()
 {
      // timer destroy
      CHECK(cudaEventDestroy(start));
@@ -552,10 +552,27 @@ void cleanUpDevice()
      CHECK(cudaFree(anchorsDevice));
      CHECK(cudaFree(orderDevice));
      CHECK(cudaFree(orderDeviceTmp));
-     // already freed mulResTensor data (sharing data with finalProbsTensor), so we can skip this
+     // already freed mulResTensor data (sharing data with finalProbsTensor), so skip this
      // CHECK(cudaFree(finalProbsTensor->data));
      CHECK(cudaFree(finalClassTensor->data));
      CHECK(cudaFree(finalBboxTensor->data));
+
+     // free remaining tensor structure (already freed their data)
+     freeTensor(convoutTensor, 0);
+     freeTensor(classInputTensor, 0);
+     freeTensor(confInputTensor, 0);
+     freeTensor(bboxInputTensor, 0);
+     freeTensor(classOutputTensor, 0);
+     freeTensor(confOutputTensor, 0);
+     freeTensor(bboxOutputTensor, 0);
+     freeTensor(reduceMaxResTensor, 0);
+     freeTensor(reduceArgResTensor, 0);
+     freeTensor(mulResTensor, 0);
+     freeTensor(bboxResTensor, 0);
+     freeTensor(anchorsDeviceTensor, 0);
+     freeTensor(finalClassTensor, 0);
+     freeTensor(finalProbsTensor, 0);
+     freeTensor(finalBboxTensor, 0);
 }
 
 // rearrange image data to [N, C, H, W] order
@@ -748,7 +765,7 @@ int main(int argc, char *argv[])
           fprintResult(result_fp, &preds);
           fclose(result_fp);
      }
-     cleanUpDevice();
+     cleanUp();
 
      // destroy the engine
      convContext->destroy();

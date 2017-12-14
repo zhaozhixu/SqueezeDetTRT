@@ -26,6 +26,7 @@ void *repeatMem(void *data, size_t size, int times, CloneKind kind);
 int computeLength(int ndim, const int *dims);
 Tensor *createTensor(float *data, int ndim, const int *dims);
 Tensor *mallocTensor(int ndim, const int* dims, const MallocKind mkind);
+void freeTensor(Tensor *t, int do_free_data);
 
 void fprintTensor(FILE *stream, const Tensor *tensor, const char *fmt);
 void printTensor(const Tensor *tensor, const char *fmt);

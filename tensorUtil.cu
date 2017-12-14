@@ -177,6 +177,19 @@ Tensor *mallocTensor(int ndim, const int* dims, const MallocKind mkind)
      return t;
 }
 
+void freeTensor(Tensor *t, int do_free_data)
+{
+     assert(isTensorValid(t));
+     sdt_free(t->dims);
+     if (do_free_data) {
+          if (isDeviceMem(t->data))
+               checkError(cudaFree(t->data));
+          else
+               sdt_free(t->data);
+     }
+     sdt_free(t);
+}
+
 void fprintTensor(FILE *stream, const Tensor *tensor, const char *fmt)
 {
      assertTensor(tensor);
