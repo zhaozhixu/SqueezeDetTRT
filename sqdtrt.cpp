@@ -115,8 +115,8 @@ static Tensor *finalClassTensor;
 static Tensor *finalProbsTensor;
 static Tensor *finalBboxTensor;
 static cudaStream_t stream;
-static cudaEvent_t start, stop;
-static float timeDetect;
+static cudaEvent_t start_imread, stop_imread, start_detect, stop_detect, start_misc, stop_misc;
+static float timeDetect, timeImread, timeMisc;
 
 std::string locateFile(const std::string& input)
 {
@@ -442,14 +442,18 @@ void setUpDevice(IExecutionContext *convContext, IExecutionContext *interpretCon
      finalBboxTensor = mallocTensor(3, finalBboxDims, DEVICE);
 
      CHECK(cudaStreamCreate(&stream));
-     CHECK(cudaEventCreate(&start));
-     CHECK(cudaEventCreate(&stop));
+     CHECK(cudaEventCreate(&start_imread));
+     CHECK(cudaEventCreate(&stop_imread));
+     CHECK(cudaEventCreate(&start_detect));
+     CHECK(cudaEventCreate(&stop_detect));
+     CHECK(cudaEventCreate(&start_misc));
+     CHECK(cudaEventCreate(&stop_misc));
 }
 
 // batch size is 1
 void doInference(IExecutionContext *convContext, IExecutionContext *interpretContext, float* input, int inputSize, int img_width, int img_height, struct predictions *preds, int batchSize)
 {
-     CHECK(cudaEventRecord(start, 0));
+     CHECK(cudaEventRecord(start_detect, 0));
 
      // DMA the input to the GPU,  execute the batch asynchronously, and DMA it back:
      CHECK(cudaMemcpyAsync(convBuffers[inputIndex], input, inputSize, cudaMemcpyHostToDevice, stream));
@@ -466,9 +470,9 @@ void doInference(IExecutionContext *convContext, IExecutionContext *interpretCon
      multiplyElement(reduceMaxResTensor, confTransTensor, mulResTensor);
      transformBboxSQD(bboxTransTensor, anchorsDeviceTensor, bboxResTensor, INPUT_W, INPUT_H, img_width, img_height);
 
-     CHECK(cudaEventRecord(stop, 0));
-     CHECK(cudaEventSynchronize(stop));
-     CHECK(cudaEventElapsedTime(&timeDetect, start, stop));
+     CHECK(cudaEventRecord(stop_detect, 0));
+     CHECK(cudaEventSynchronize(stop_detect));
+     CHECK(cudaEventElapsedTime(&timeDetect, start_detect, stop_detect));
 
 #ifdef DEBUG
      saveDeviceTensor("data/convoutTensor.txt", convoutTensor, "%15.6e");
@@ -495,6 +499,7 @@ void doInference(IExecutionContext *convContext, IExecutionContext *interpretCon
      saveDeviceTensor("data/classInputDims3.txt", classInput3, "%15.6e");
 #endif
      // filter top-n-detection
+     CHECK(cudaEventRecord(start_misc, 0));
      CHECK(cudaMemcpy(orderDeviceTmp, orderDevice, anchorsNum * sizeof(int), cudaMemcpyDeviceToDevice));
      tensorIndexSort(mulResTensor, orderDeviceTmp);
      // already sort mulResTensor (sharing data with finalProbsTensor), so we can skip this
@@ -523,8 +528,12 @@ void doInference(IExecutionContext *convContext, IExecutionContext *interpretCon
 void cleanUp()
 {
      // timer destroy
-     CHECK(cudaEventDestroy(start));
-     CHECK(cudaEventDestroy(stop));
+     CHECK(cudaEventDestroy(start_imread));
+     CHECK(cudaEventDestroy(stop_imread));
+     CHECK(cudaEventDestroy(start_detect));
+     CHECK(cudaEventDestroy(stop_detect));
+     CHECK(cudaEventDestroy(start_misc));
+     CHECK(cudaEventDestroy(stop_misc));
 
      // release the stream and the buffers
      CHECK(cudaStreamDestroy(stream));
@@ -578,6 +587,7 @@ void cleanUp()
 // rearrange image data to [N, C, H, W] order
 float *prepareData(float *data, std::string img_name, float *img_width, float *img_height)
 {
+     CHECK(cudaEventRecord(start_imread, 0));
      cv::Mat image = readImage(img_name, INPUT_W, INPUT_H, img_width, img_height);
      if (image.data == NULL)
           return NULL;
@@ -590,6 +600,9 @@ float *prepareData(float *data, std::string img_name, float *img_width, float *i
                data[c*volChl + j] = float(image.data[j*INPUT_C+c]) - PIXEL_MEAN[c];
      }
 
+     CHECK(cudaEventRecord(stop_imread, 0));
+     CHECK(cudaEventSynchronize(stop_imread));
+     CHECK(cudaEventElapsedTime(&timeImread, start_imread, stop_imread));
      return data;
 }
 
@@ -648,6 +661,9 @@ void detectionFilter(struct predictions *preds, float nms_thresh, float prob_thr
                          keep[j] = 0;
           }
      }
+     CHECK(cudaEventRecord(stop_misc, 0));
+     CHECK(cudaEventSynchronize(stop_misc));
+     CHECK(cudaEventElapsedTime(&timeMisc, start_misc, stop_misc));
 }
 
 void fprintResult(FILE *fp, struct predictions *preds)
@@ -718,14 +734,9 @@ int main(int argc, char *argv[])
      } else
           closedir(dp);
 
-     std::vector<std::string> imageList = getImageList(img_dir, eval_list);
-     printf("number of images: %ld\n", imageList.size());
-     char *result_file_path = sdt_path_alloc(NULL);
-     char *img_name_buf = sdt_path_alloc(NULL);
-     FILE *result_fp;
-     float img_width, img_height;
-     size_t inputSize = INPUT_C * INPUT_H * INPUT_W * sizeof(float);
-     float *data = (float *)sdt_alloc(sizeof(float) * INPUT_C * INPUT_H * INPUT_W);
+     // maloc host memory
+     size_t inputSize = sizeof(float) * INPUT_C * INPUT_H * INPUT_W;
+     float *data = (float *)sdt_alloc(inputSize);
      float *anchors = prepareAnchors(ANCHOR_SHAPE, INPUT_W, INPUT_H, INPUT_N, CONVOUT_H, CONVOUT_W, ANCHORS_PER_GRID);
      struct predictions preds;
      preds.prob = (float *)sdt_alloc(sizeof(float) * TOP_N_DETECTION);
@@ -746,26 +757,49 @@ int main(int argc, char *argv[])
      IExecutionContext *convContext = convEngine->createExecutionContext();
      IExecutionContext *interpretContext = interpretEngine->createExecutionContext();
 
-     // malloc device buffers
+     // malloc device memory
      setUpDevice(convContext, interpretContext, anchors, INPUT_N);
 
-     // run inference
+     // read image list and run inference
+     FILE *result_fp;
+     char *result_file_path = sdt_path_alloc(NULL);
+     float img_width, img_height;
+     char *img_name_buf = sdt_path_alloc(NULL);
+     float imread_time_sum = 0, detect_time_sum = 0, misc_time_sum = 0;
+     std::vector<std::string> imageList = getImageList(img_dir, eval_list);
      int img_list_size = imageList.size();
+     printf("number of images: %d\n", img_list_size);
+
      for (int i = 0; i < img_list_size; i++) {
-          printf("(%d/%d) filename: %s  ", i+1, img_list_size, getFileName(img_name_buf, imageList[i].c_str()));
+          getFileName(img_name_buf, imageList[i].c_str());
+          printf("(%d/%d) image: %s ", i+1, img_list_size, img_name_buf);
+
           if (prepareData(data, imageList[i], &img_width, &img_height) == NULL) {
                printf("error reading image\n");
                continue;
           }
           doInference(convContext, interpretContext, data, inputSize, img_width, img_height, &preds, INPUT_N);
-          printf("detect in %f ms\n", timeDetect);
           detectionFilter(&preds, NMS_THRESH, PROB_THRESH);
+
+          printf("imread: %.2fms detect: %.2fms misc: %.2fms\n", timeImread, timeDetect, timeMisc);
+          imread_time_sum += timeImread;
+          detect_time_sum += timeDetect;
+          misc_time_sum += timeMisc;
           sprintResultFilePath(result_file_path, imageList[i].c_str(), result_dir);
           result_fp = fopen(result_file_path, "w");
           fprintResult(result_fp, &preds);
           fclose(result_fp);
      }
+
+     // clean up device memory
      cleanUp();
+
+     // compute timing result
+     float avg_imread, avg_detect, avg_misc;
+     avg_imread = imread_time_sum / img_list_size;
+     avg_detect = detect_time_sum / img_list_size;
+     avg_misc = misc_time_sum / img_list_size;
+     printf("Average timing: imread: %.2fms detect: %.2fms misc: %.2fms\n", avg_imread, avg_detect, avg_misc);
 
      // destroy the engine
      convContext->destroy();
@@ -774,6 +808,7 @@ int main(int argc, char *argv[])
      interpretEngine->destroy();
      runtime->destroy();
 
+     // clean up host memory
      sdt_free(img_name_buf);
      sdt_free(result_file_path);
      sdt_free(data);
