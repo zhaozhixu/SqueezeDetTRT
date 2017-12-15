@@ -11,6 +11,7 @@ std::vector<std::string> getImageList(const char *pathname, const char *eval_lis
 char *sprintResultFilePath(char *buf, const char *img_name, const char *res_dir);
 std::map<std::string, Weights> loadWeights(const std::string file);
 cv::Mat readImage(const std::string& filename, int width, int height, float *x_scale, float *y_scale);
+cv::Mat readFrame(cv::Mat &frame, int width, int height, float *img_width, float *img_height);
 
 /* class Reshape: public IPlugin */
 /* { */

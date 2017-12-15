@@ -585,12 +585,19 @@ void cleanUp()
 }
 
 // rearrange image data to [N, C, H, W] order
-float *prepareData(float *data, std::string img_name, float *img_width, float *img_height)
+float *prepareData(float *data, std::string *img_name, cv::Mat *frame, float *img_width, float *img_height)
 {
      CHECK(cudaEventRecord(start_imread, 0));
-     cv::Mat image = readImage(img_name, INPUT_W, INPUT_H, img_width, img_height);
-     if (image.data == NULL)
-          return NULL;
+     cv::Mat image;
+     if (frame == NULL) {
+          image = readImage(*img_name, INPUT_W, INPUT_H, img_width, img_height);
+          if (image.data == NULL)
+               return NULL;
+     } else {
+          image = readFrame(*frame, INPUT_W, INPUT_H, img_width, img_height);
+          if (image.data == NULL)
+               return NULL;
+     }
 
      int volChl = INPUT_H*INPUT_W;
      for (int c = 0; c < INPUT_C; ++c)
@@ -683,6 +690,7 @@ void fprintResult(FILE *fp, struct predictions *preds)
 
 static const struct option longopts[] = {
      {"eval-list", 1, NULL, 'e'},
+     {"video", 1, NULL, 'v'},
      {"x-shift", 1, NULL, 'x'},
      {"y-shift", 1, NULL, 'y'},
      {"help", 0, NULL, 'h'},
@@ -694,12 +702,15 @@ Apply SqueezeDet detection algorithm to images in IMAGE_DIR.\n\
 Print detection results to one text file per image in RESULT_DIR using KITTI dataset format.\n\
 \n\
 Options:\n\
-       -e, --eval-list=EVAL_LIST_FILE          provide an evaluation list file which contains\n\
+       -e, --eval-list=EVAL_LIST_FILE          Provide an evaluation list file which contains\n\
                                                the image names (without extension names)\n\
-                                               in IMAGE_DIR to be evaluated\n\
-       -x, --x-shift=X_SHIFT                   shift all bbox downward X_SHIFT pixels\n\
-       -y, --y-shift=Y_SHIFT                   shift all bbox rightward Y_SHIFT pixels\n\
-       -h, --help                              print this help and exit\n";
+                                               in IMAGE_DIR to be evaluated.\n\
+       -v, --video=VIDEO_FILE                  Detect an video file and play the detected video\n\
+                                               in a new window. IMAGE_DIR and RESULT_DIR are\n\
+                                               not needed.\n\
+       -x, --x-shift=X_SHIFT                   Shift all bbox downward X_SHIFT pixels.\n\
+       -y, --y-shift=Y_SHIFT                   Shift all bbox rightward Y_SHIFT pixels.\n\
+       -h, --help                              Print this help and exit.\n";
 
 static void print_usage_and_exit()
 {
@@ -711,12 +722,15 @@ int main(int argc, char *argv[])
 {
      int opt, optindex;
      DIR *dp;
-     char *img_dir = NULL, *result_dir = NULL, *eval_list = NULL;
+     char *img_dir = NULL, *result_dir = NULL, *eval_list = NULL, *video = NULL;
      int x_shift, y_shift;
-     while ((opt = getopt_long(argc, argv, ":e:x:y:h", longopts, &optindex)) != -1) {
+     while ((opt = getopt_long(argc, argv, ":e:v:x:y:h", longopts, &optindex)) != -1) {
           switch (opt) {
           case 'e':
                eval_list = optarg;
+               break;
+          case 'v':
+               video = optarg;
                break;
           case 'x':
                x_shift = atoi(optarg);
@@ -735,15 +749,17 @@ int main(int argc, char *argv[])
                break;
           }
      }
-     if (optind >= argc)
+     if (video == NULL && optind >= argc)
           print_usage_and_exit();
-     img_dir = argv[optind++];
-     result_dir = argv[optind];
-     if ((dp = opendir(result_dir)) == NULL) {
-          if (mkdir(result_dir, S_IRUSR|S_IWUSR|S_IXUSR|S_IRGRP|S_IXGRP|S_IROTH|S_IXOTH) == -1)
-               err(EXIT_FAILURE, "%s", result_dir);
-     } else
-          closedir(dp);
+     if (video == NULL) {
+          img_dir = argv[optind++];
+          result_dir = argv[optind];
+          if ((dp = opendir(result_dir)) == NULL) {
+               if (mkdir(result_dir, S_IRUSR|S_IWUSR|S_IXUSR|S_IRGRP|S_IXGRP|S_IROTH|S_IXOTH) == -1)
+                    err(EXIT_FAILURE, "%s", result_dir);
+          } else
+               closedir(dp);
+     }
 
      // maloc host memory
      size_t inputSize = sizeof(float) * INPUT_C * INPUT_H * INPUT_W;
@@ -771,24 +787,49 @@ int main(int argc, char *argv[])
      // malloc device memory
      setUpDevice(convContext, interpretContext, anchors, INPUT_N);
 
-     // read image list and run inference
-     FILE *result_fp;
-     char *result_file_path = sdt_path_alloc(NULL);
+     // read image and run inference
+     int i = 0;
      float img_width, img_height;
-     char *img_name_buf = sdt_path_alloc(NULL);
      float imread_time_sum = 0, detect_time_sum = 0, misc_time_sum = 0;
-     std::vector<std::string> imageList = getImageList(img_dir, eval_list);
-     int img_list_size = imageList.size();
-     printf("number of images: %d\n", img_list_size);
-
-     for (int i = 0; i < img_list_size; i++) {
-          getFileName(img_name_buf, imageList[i].c_str());
-          printf("(%d/%d) image: %s ", i+1, img_list_size, img_name_buf);
-
-          if (prepareData(data, imageList[i], &img_width, &img_height) == NULL) {
-               printf("error reading image\n");
-               continue;
+     FILE *result_fp;
+     char *result_file_path;
+     char *img_name_buf;
+     std::vector<std::string> imageList;
+     int img_list_size;
+     cv::VideoCapture cap;
+     cv::Mat frame;
+     if (video == NULL) {
+          result_file_path = sdt_path_alloc(NULL);
+          img_name_buf = sdt_path_alloc(NULL);
+          imageList = getImageList(img_dir, eval_list);
+          img_list_size = imageList.size();
+          printf("number of images: %d\n", img_list_size);
+     } else {
+          cap = cv::VideoCapture(video);
+          if (!cap.isOpened()) {
+               fprintf(stderr, "error reading video file: %s", video);
+               exit(EXIT_FAILURE);
           }
+          cv::namedWindow("detection", 1);
+     }
+
+     for (;;) {
+          if (video == NULL) {
+               if (i >= img_list_size)
+                    break;
+               getFileName(img_name_buf, imageList[i].c_str());
+               printf("(%d/%d) image: %s ", i+1, img_list_size, img_name_buf);
+               data = prepareData(data, &imageList[i], NULL, &img_width, &img_height);
+               if (data == NULL) {
+                    printf("error reading image\n");
+                    continue;
+               }
+          } else {
+               if (cap.read(frame) == false)
+                    break;
+               data = prepareData(data, NULL, &frame, &img_width, &img_height);
+          }
+
           doInference(convContext, interpretContext, data, inputSize, img_width, img_height, x_shift, y_shift, &preds, INPUT_N);
           detectionFilter(&preds, NMS_THRESH, PROB_THRESH);
 
@@ -796,10 +837,14 @@ int main(int argc, char *argv[])
           imread_time_sum += timeImread;
           detect_time_sum += timeDetect;
           misc_time_sum += timeMisc;
-          sprintResultFilePath(result_file_path, imageList[i].c_str(), result_dir);
-          result_fp = fopen(result_file_path, "w");
-          fprintResult(result_fp, &preds);
-          fclose(result_fp);
+
+          if (video == NULL) {
+               sprintResultFilePath(result_file_path, imageList[i].c_str(), result_dir);
+               result_fp = fopen(result_file_path, "w");
+               fprintResult(result_fp, &preds);
+               fclose(result_fp);
+               i++;
+          }
      }
 
      // clean up device memory

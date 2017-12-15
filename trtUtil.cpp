@@ -99,6 +99,34 @@ std::vector<std::string> getImageList(const char *pathname, const char *eval_lis
      return imgList;
 }
 
+cv::Mat readImage(const std::string& filename, int width, int height, float *img_width, float *img_height)
+{
+     cv::Mat img = cv::imread(filename);
+     // printf("img.total(): %ld  ", img.total());
+     if (img.data == NULL)
+          return img;
+
+     if (img_width && img_height) {
+          *img_width = img.size().width;
+          *img_height = img.size().height;
+     }
+     cv::resize(img, img, cv::Size(width, height));
+     return img;
+}
+
+cv::Mat readFrame(cv::Mat &frame, int width, int height, float *img_width, float *img_height)
+{
+     if (frame.data == NULL)
+          return frame;
+
+     if (img_width && img_height) {
+          *img_width = frame.size().width;
+          *img_height = frame.size().height;
+     }
+     cv::resize(frame, frame, cv::Size(width, height));
+     return frame;
+}
+
 char *sprintResultFilePath(char *buf, const char *img_name, const char *res_dir)
 {
      DIR *dp;
@@ -155,20 +183,4 @@ std::map<std::string, Weights> loadWeights(const std::string file)
         weightMap[name] = wt;
     }
     return weightMap;
-}
-
-cv::Mat readImage(const std::string& filename, int width, int height, float *img_width, float *img_height)
-{
-    cv::Mat img = cv::imread(filename);
-    // printf("img.total(): %ld  ", img.total());
-    if (img.data == NULL) {
-         return img;
-    }
-
-    if (img_width && img_height) {
-         *img_width = img.size().width;
-         *img_height = img.size().height;
-    }
-    cv::resize(img, img, cv::Size(width, height));
-    return img;
 }
