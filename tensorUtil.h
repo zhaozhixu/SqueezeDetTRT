@@ -44,7 +44,7 @@ Tensor *createReducedTensor(const Tensor *src, int dim);
 void *reduceArgMax(const Tensor *src, Tensor *dst, Tensor *arg, int dim);
 Tensor *multiplyElement(const Tensor *src1, const Tensor *src2, Tensor *dst);
 Tensor *transposeTensor(const Tensor *src, Tensor *dst, int *axes, int **workspace);
-Tensor *transformBboxSQD(const Tensor *delta, const Tensor *anchor, Tensor *res, float width, float height, float img_width, float img_height);
+Tensor *transformBboxSQD(const Tensor *delta, const Tensor *anchor, Tensor *res, float width, float height, float img_width, float img_height, int x_shift, int y_shift);
 void tensorIndexSort(Tensor *src, int *idx);
 void pickElements(float *src, float *dst, int stride, int *idx, int len);
 float computeIou(float *bbox0, float *bbox1);

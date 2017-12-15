@@ -451,7 +451,7 @@ void setUpDevice(IExecutionContext *convContext, IExecutionContext *interpretCon
 }
 
 // batch size is 1
-void doInference(IExecutionContext *convContext, IExecutionContext *interpretContext, float* input, int inputSize, int img_width, int img_height, struct predictions *preds, int batchSize)
+void doInference(IExecutionContext *convContext, IExecutionContext *interpretContext, float* input, int inputSize, int img_width, int img_height, int x_shift, int y_shift, struct predictions *preds, int batchSize)
 {
      CHECK(cudaEventRecord(start_detect, 0));
 
@@ -468,7 +468,7 @@ void doInference(IExecutionContext *convContext, IExecutionContext *interpretCon
      transposeTensor(bboxOutputTensor, bboxTransTensor, transAxesDevice, bboxTransWorkspace);
      reduceArgMax(classTransTensor, reduceMaxResTensor, reduceArgResTensor, 4);
      multiplyElement(reduceMaxResTensor, confTransTensor, mulResTensor);
-     transformBboxSQD(bboxTransTensor, anchorsDeviceTensor, bboxResTensor, INPUT_W, INPUT_H, img_width, img_height);
+     transformBboxSQD(bboxTransTensor, anchorsDeviceTensor, bboxResTensor, INPUT_W, INPUT_H, img_width, img_height, x_shift, y_shift);
 
      CHECK(cudaEventRecord(stop_detect, 0));
      CHECK(cudaEventSynchronize(stop_detect));
@@ -683,11 +683,13 @@ void fprintResult(FILE *fp, struct predictions *preds)
 
 static const struct option longopts[] = {
      {"eval-list", 1, NULL, 'e'},
+     {"x-shift", 1, NULL, 'x'},
+     {"y-shift", 1, NULL, 'y'},
      {"help", 0, NULL, 'h'},
      {0, 0, 0, 0}
 };
 
-static const char *usage = "Usage: sqdtrt [-e EVAL_LIST_FILE] IMAGE_DIR RESULT_DIR\n\
+static const char *usage = "Usage: sqdtrt [options] IMAGE_DIR RESULT_DIR\n\
 Apply SqueezeDet detection algorithm to images in IMAGE_DIR.\n\
 Print detection results to one text file per image in RESULT_DIR using KITTI dataset format.\n\
 \n\
@@ -695,6 +697,8 @@ Options:\n\
        -e, --eval-list=EVAL_LIST_FILE          provide an evaluation list file which contains\n\
                                                the image names (without extension names)\n\
                                                in IMAGE_DIR to be evaluated\n\
+       -x, --x-shift=X_SHIFT                   shift all bbox downward X_SHIFT pixels\n\
+       -y, --y-shift=Y_SHIFT                   shift all bbox rightward Y_SHIFT pixels\n\
        -h, --help                              print this help and exit\n";
 
 static void print_usage_and_exit()
@@ -708,10 +712,17 @@ int main(int argc, char *argv[])
      int opt, optindex;
      DIR *dp;
      char *img_dir = NULL, *result_dir = NULL, *eval_list = NULL;
-     while ((opt = getopt_long(argc, argv, ":e:h", longopts, &optindex)) != -1) {
+     int x_shift, y_shift;
+     while ((opt = getopt_long(argc, argv, ":e:x:y:h", longopts, &optindex)) != -1) {
           switch (opt) {
           case 'e':
                eval_list = optarg;
+               break;
+          case 'x':
+               x_shift = atoi(optarg);
+               break;
+          case 'y':
+               y_shift = atoi(optarg);
                break;
           case 'h':
                print_usage_and_exit();
@@ -778,7 +789,7 @@ int main(int argc, char *argv[])
                printf("error reading image\n");
                continue;
           }
-          doInference(convContext, interpretContext, data, inputSize, img_width, img_height, &preds, INPUT_N);
+          doInference(convContext, interpretContext, data, inputSize, img_width, img_height, x_shift, y_shift, &preds, INPUT_N);
           detectionFilter(&preds, NMS_THRESH, PROB_THRESH);
 
           printf("imread: %.2fms detect: %.2fms misc: %.2fms\n", timeImread, timeDetect, timeMisc);

@@ -474,7 +474,7 @@ Tensor *transposeTensor(const Tensor *src, Tensor *dst, int *axes, int **workspa
    delta, anchor, res are all of the same shape [..., 4]
    width and height are resized image width and height.
    x_scales and y_scales are (temporary) pointers to width/original_width and height/original_height. */
-Tensor *transformBboxSQD(const Tensor *delta, const Tensor *anchor, Tensor *res, float width, float height, float img_width, float img_height)
+Tensor *transformBboxSQD(const Tensor *delta, const Tensor *anchor, Tensor *res, float width, float height, float img_width, float img_height, int x_shift, int y_shift)
 {
      assert(isShapeEqual(delta, anchor));
      assert(isShapeEqual(delta, res));
@@ -490,7 +490,7 @@ Tensor *transformBboxSQD(const Tensor *delta, const Tensor *anchor, Tensor *res,
      block_size = MAX_THREADS_PER_BLOCK;
      block_num = thread_num / block_size + 1;
 
-     transformBboxSQDKernel<<<block_num, block_size>>>(delta->data, anchor->data, res->data, width, height, img_width, img_height, block_size, thread_num);
+     transformBboxSQDKernel<<<block_num, block_size>>>(delta->data, anchor->data, res->data, width, height, img_width, img_height, x_shift, y_shift, block_size, thread_num);
      return res;
 }
 
