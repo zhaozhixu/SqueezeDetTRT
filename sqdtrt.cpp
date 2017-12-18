@@ -56,6 +56,7 @@ static const int TOP_N_DETECTION = 64;
 static const float NMS_THRESH = 0.4;
 // static const float PROB_THRESH = 0.005;
 static const float PROB_THRESH = 0.3;
+static const float PLOT_PROB_THRESH = 0.4;
 // static const float EPSILON = 1e-16;
 
 static const char* INPUT_NAME = "data";
@@ -585,26 +586,15 @@ void cleanUp()
 }
 
 // rearrange image data to [N, C, H, W] order
-float *prepareData(float *data, std::string *img_name, cv::Mat *frame, float *img_width, float *img_height)
+float *prepareData(float *data, cv::Mat &frame)
 {
-     CHECK(cudaEventRecord(start_imread, 0));
-     cv::Mat image;
-     if (frame == NULL) {
-          image = readImage(*img_name, INPUT_W, INPUT_H, img_width, img_height);
-          if (image.data == NULL)
-               return NULL;
-     } else {
-          image = readFrame(*frame, INPUT_W, INPUT_H, img_width, img_height);
-          if (image.data == NULL)
-               return NULL;
-     }
-
+     assert(data && !frame.empty());
      int volChl = INPUT_H*INPUT_W;
      for (int c = 0; c < INPUT_C; ++c)
      {
           // the color image to input should be in BGR order
           for (unsigned j = 0; j < volChl; ++j)
-               data[c*volChl + j] = float(image.data[j*INPUT_C+c]) - PIXEL_MEAN[c];
+               data[c*volChl + j] = float(frame.data[j*INPUT_C+c]) - PIXEL_MEAN[c];
      }
 
      CHECK(cudaEventRecord(stop_imread, 0));
@@ -686,6 +676,23 @@ void fprintResult(FILE *fp, struct predictions *preds)
           fprintf(fp, "%s -1 -1 0.0 %.2f %.2f %.2f %.2f 0.0 0.0 0.0 0.0 0.0 0.0 0.0 %.3f\n",
                   CLASS_NAMES[(int)preds->klass[i]], bbox[0], bbox[1], bbox[2], bbox[3], preds->prob[i]);
      }
+}
+
+void drawBbox(cv::Mat &frame, struct predictions *preds)
+{
+     assert(!frame.empty() && preds->bbox && preds->klass && preds->prob && preds->keep);
+     int i;
+     char *prob_s = (char *)sdt_alloc(32);
+     float *bbox;
+     for (i = 0; i < preds->num; i++) {
+          if (!preds->keep[i] || preds->prob[i] < PLOT_PROB_THRESH)
+               continue;
+          bbox = &preds->bbox[i * OUTPUT_BBOX_SIZE];
+          cv::rectangle(frame, cv::Point(bbox[0], bbox[1]), cv::Point(bbox[2], bbox[3]), cv::Scalar(0, 255, 0));
+          sprintf(prob_s, "%.2f", preds->prob[i]);
+          cv::putText(frame, std::string(CLASS_NAMES[(int)preds->klass[i]]) + ": " + std::string(prob_s), cv::Point(bbox[0], bbox[1]), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0));
+     }
+     sdt_free(prob_s);
 }
 
 static const struct option longopts[] = {
@@ -788,12 +795,14 @@ int main(int argc, char *argv[])
      setUpDevice(convContext, interpretContext, anchors, INPUT_N);
 
      // read image and run inference
-     int i = 0;
+     int frame_idx = 0;
+     double start_fps, end_fps;
+     double fps;
+     double imread_time_sum = 0, detect_time_sum = 0, misc_time_sum = 0, fps_sum = 0;
      float img_width, img_height;
-     float imread_time_sum = 0, detect_time_sum = 0, misc_time_sum = 0;
      FILE *result_fp;
-     char *result_file_path;
-     char *img_name_buf;
+     char *result_file_path = NULL;
+     char *img_name_buf = NULL;
      std::vector<std::string> imageList;
      int img_list_size;
      cv::VideoCapture cap;
@@ -810,52 +819,76 @@ int main(int argc, char *argv[])
                fprintf(stderr, "error reading video file: %s", video);
                exit(EXIT_FAILURE);
           }
-          cv::namedWindow("detection", 1);
      }
 
-     for (;;) {
+     for (;; frame_idx++) {
+          start_fps = getUnixTime();
           if (video == NULL) {
-               if (i >= img_list_size)
+               if (frame_idx >= img_list_size) {
+                    frame_idx--;
                     break;
-               getFileName(img_name_buf, imageList[i].c_str());
-               printf("(%d/%d) image: %s ", i+1, img_list_size, img_name_buf);
-               data = prepareData(data, &imageList[i], NULL, &img_width, &img_height);
-               if (data == NULL) {
+               }
+               getFileName(img_name_buf, imageList[frame_idx].c_str());
+               printf("(%d/%d) image: %s ", frame_idx+1, img_list_size, img_name_buf);
+               CHECK(cudaEventRecord(start_imread, 0));
+               frame = cv::imread(imageList[frame_idx]);
+               if (frame.empty()) {
                     printf("error reading image\n");
                     continue;
                }
           } else {
-               if (cap.read(frame) == false)
+               CHECK(cudaEventRecord(start_imread, 0));
+               if (cap.read(frame) == false) {
+                    frame_idx--;
                     break;
-               data = prepareData(data, NULL, &frame, &img_width, &img_height);
+               }
+               if (frame.empty()) {
+                    printf("error reading frame %d\n", frame_idx);
+                    continue;
+               }
           }
+          preprocessFrame(frame, INPUT_W, INPUT_H, &img_width, &img_height);
+          prepareData(data, frame);
 
           doInference(convContext, interpretContext, data, inputSize, img_width, img_height, x_shift, y_shift, &preds, INPUT_N);
           detectionFilter(&preds, NMS_THRESH, PROB_THRESH);
 
-          printf("imread: %.2fms detect: %.2fms misc: %.2fms\n", timeImread, timeDetect, timeMisc);
-          imread_time_sum += timeImread;
-          detect_time_sum += timeDetect;
-          misc_time_sum += timeMisc;
-
           if (video == NULL) {
-               sprintResultFilePath(result_file_path, imageList[i].c_str(), result_dir);
+               sprintResultFilePath(result_file_path, imageList[frame_idx].c_str(), result_dir);
                result_fp = fopen(result_file_path, "w");
                fprintResult(result_fp, &preds);
                fclose(result_fp);
-               i++;
+          } else {
+               drawBbox(frame, &preds);
+               cv::imshow("detection", frame);
+               // if (cv::waitKey(1) == 65) {
+               //      cv::waitKey(0);
+               // } else {
+               if (cv::waitKey(30) >= 0) {
+                    frame_idx--;
+                    break;
+               }
           }
+
+          end_fps = getUnixTime();
+          fps = 1 / (end_fps - start_fps);
+          printf("imread: %.2fms detect: %.2fms misc: %.2fms fps: %.2fHz\n", timeImread, timeDetect, timeMisc, fps);
+          imread_time_sum += timeImread;
+          detect_time_sum += timeDetect;
+          misc_time_sum += timeMisc;
+          fps_sum += fps;
      }
 
      // clean up device memory
      cleanUp();
 
      // compute timing result
-     float avg_imread, avg_detect, avg_misc;
-     avg_imread = imread_time_sum / img_list_size;
-     avg_detect = detect_time_sum / img_list_size;
-     avg_misc = misc_time_sum / img_list_size;
-     printf("Average timing: imread: %.2fms detect: %.2fms misc: %.2fms\n", avg_imread, avg_detect, avg_misc);
+     double avg_imread, avg_detect, avg_misc, avg_fps;
+     avg_imread = imread_time_sum / (frame_idx + 1);
+     avg_detect = detect_time_sum / (frame_idx + 1);
+     avg_misc = misc_time_sum / (frame_idx + 1);
+     avg_fps = fps_sum / (frame_idx + 1);
+     printf("Average timing: imread: %.2fms detect: %.2fms misc: %.2fms fps: %.2fHz\n", avg_imread, avg_detect, avg_misc, avg_fps);
 
      // destroy the engine
      convContext->destroy();

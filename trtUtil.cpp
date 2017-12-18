@@ -40,6 +40,15 @@ static char *changeSuffix(char *name, const char *new_suffix)
      return name;
 }
 
+double getUnixTime(void)
+{
+     struct timespec tv;
+
+     if(clock_gettime(CLOCK_REALTIME, &tv) != 0) return 0;
+
+     return (tv.tv_sec + (tv.tv_nsec / 1.0e9));
+}
+
 char *getFileName(char *buf, const char *path)
 {
      assert(buf);
@@ -102,8 +111,7 @@ std::vector<std::string> getImageList(const char *pathname, const char *eval_lis
 cv::Mat readImage(const std::string& filename, int width, int height, float *img_width, float *img_height)
 {
      cv::Mat img = cv::imread(filename);
-     // printf("img.total(): %ld  ", img.total());
-     if (img.data == NULL)
+     if (img.empty())
           return img;
 
      if (img_width && img_height) {
@@ -114,17 +122,15 @@ cv::Mat readImage(const std::string& filename, int width, int height, float *img
      return img;
 }
 
-cv::Mat readFrame(cv::Mat &frame, int width, int height, float *img_width, float *img_height)
+void preprocessFrame(cv::Mat &frame, int width, int height, float *img_width, float *img_height)
 {
-     if (frame.data == NULL)
-          return frame;
+     assert(!frame.empty());
 
      if (img_width && img_height) {
           *img_width = frame.size().width;
           *img_height = frame.size().height;
      }
      cv::resize(frame, frame, cv::Size(width, height));
-     return frame;
 }
 
 char *sprintResultFilePath(char *buf, const char *img_name, const char *res_dir)
