@@ -864,7 +864,7 @@ int main(int argc, char *argv[])
                // if (cv::waitKey(1) == 65) {
                //      cv::waitKey(0);
                // } else {
-               if (cv::waitKey(30) >= 0) {
+               if (cv::waitKey(1) >= 0) {
                     frame_idx--;
                     break;
                }
