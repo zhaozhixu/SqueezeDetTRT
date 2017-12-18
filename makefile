@@ -5,8 +5,8 @@ ifeq ($(DEBUG),1)
 CC += -g -O0 -DDEBUG
 CUCC += -lineinfo -ccbin $(CC)
 else
-CC += -O3 -DNDEBUG -g
-CUCC +=  -ccbin $(CC)
+CC += -O3 -DNDEBUG
+CUCC += -ccbin $(CC)
 endif
 TARGET = sqdtrt
 

@@ -730,7 +730,7 @@ int main(int argc, char *argv[])
      int opt, optindex;
      DIR *dp;
      char *img_dir = NULL, *result_dir = NULL, *eval_list = NULL, *video = NULL;
-     int x_shift, y_shift;
+     int x_shift = 0, y_shift = 0;
      while ((opt = getopt_long(argc, argv, ":e:v:x:y:h", longopts, &optindex)) != -1) {
           switch (opt) {
           case 'e':
@@ -794,12 +794,7 @@ int main(int argc, char *argv[])
      // malloc device memory
      setUpDevice(convContext, interpretContext, anchors, INPUT_N);
 
-     // read image and run inference
-     int frame_idx = 0;
-     double start_fps, end_fps;
-     double fps;
-     double imread_time_sum = 0, detect_time_sum = 0, misc_time_sum = 0, fps_sum = 0;
-     float img_width, img_height;
+     // read image or video, alloc result path buffer
      FILE *result_fp;
      char *result_file_path = NULL;
      char *img_name_buf = NULL;
@@ -821,6 +816,13 @@ int main(int argc, char *argv[])
           }
      }
 
+     // do inference
+     int frame_idx = 0;
+     char key;
+     double start_fps, end_fps;
+     double fps;
+     double imread_time_sum = 0, detect_time_sum = 0, misc_time_sum = 0, fps_sum = 0;
+     float img_width, img_height;
      for (;; frame_idx++) {
           start_fps = getUnixTime();
           if (video == NULL) {
@@ -861,10 +863,10 @@ int main(int argc, char *argv[])
           } else {
                drawBbox(frame, &preds);
                cv::imshow("detection", frame);
-               // if (cv::waitKey(1) == 65) {
-               //      cv::waitKey(0);
-               // } else {
-               if (cv::waitKey(1) >= 0) {
+               key = cv::waitKey(1);
+               if (key == ' ') {
+                    cv::waitKey(0);
+               } else if (key == 'q' || key == 27) { // 27 is the ASCII code of ESC
                     frame_idx--;
                     break;
                }
