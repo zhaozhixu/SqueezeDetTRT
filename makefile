@@ -37,15 +37,15 @@ LFLAGSD=$(COMMON_LD_FLAGS)
 $(TARGET): sqdtrt.o common.o trtUtil.o tensorUtil.o tensorCuda.o errorHandle.o sdt_alloc.o
 	$(CC) -Wall sqdtrt.o common.o trtUtil.o tensorUtil.o tensorCuda.o errorHandle.o sdt_alloc.o -o $(TARGET) $(CFLAGSD) $(LIBPATHS) $(LIBS)
 sqdtrt.o: sqdtrt.cpp tensorUtil.h tensorCuda.h common.h errorHandle.h sdt_alloc.h
-	$(CUCC) -c sqdtrt.cpp $(CFLAGSD) $(LFLAGSD) $(LIBS)
+	$(CUCC) -c sqdtrt.cpp $(CFLAGSD) $(LIBS)
 common.o: common.cpp common.h errorHandle.h
-	$(CUCC) -c common.cpp $(CFLAGSD) $(LFLAGSD) $(LIBS)
+	$(CUCC) -c common.cpp $(CFLAGSD) $(LIBS)
 trtUtil.o: trtUtil.cpp trtUtil.h errorHandle.h sdt_alloc.h
-	$(CUCC) -c trtUtil.cpp $(CFLAGSD) $(LFLAGSD) $(LIBS)
+	$(CUCC) -c trtUtil.cpp $(CFLAGSD) $(LIBS)
 tensorUtil.o: tensorUtil.cu tensorUtil.h tensorCuda.h errorHandle.h sdt_alloc.h
-	$(CUCC) -c tensorUtil.cu $(CFLAGSD) $(LFLAGSD) $(LIBS)
+	$(CUCC) -c tensorUtil.cu $(CFLAGSD) $(LIBS)
 tensorCuda.o: tensorCuda.cu tensorCuda.h errorHandle.h
-	$(CUCC) -c tensorCuda.cu $(CFLAGSD) $(LFLAGSD) $(LIBS)
+	$(CUCC) -c tensorCuda.cu $(CFLAGSD) $(LIBS)
 errorHandle.o: errorHandle.cu errorHandle.h
 	$(CUCC) -c errorHandle.cu $(INCPATHS) $(LIBPATHS) $(COMMON_LIBS)
 sdt_alloc.o: sdt_alloc.c sdt_alloc.h

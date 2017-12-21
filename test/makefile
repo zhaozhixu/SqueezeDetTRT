@@ -1,0 +1,31 @@
+CC = g++
+CUCC = nvcc -m64 -ccbin $(CC) -lineinfo
+TARGET = testtrt
+
+TRIPLE?=x86_64-linux
+CUDA_INSTALL_DIR = /usr/local/cuda-8.0
+CUDA_LIBDIR = lib
+
+INCPATHS    =-I"$(CUDA_INSTALL_DIR)/include" -I"/usr/local/include" -I".."
+LIBPATHS    =-L"$(CUDA_INSTALL_DIR)/targets/$(TRIPLE)/$(CUDA_LIBDIR)" -L"/usr/local/lib" -L"$(CUDA_INSTALL_DIR)/$(CUDA_LIBDIR)"
+# COMMON_LIBS = -lcudnn -lcublas -lcudart_static -lnvToolsExt -lcudart
+COMMON_LIBS = -lcudart -lcudart_static `pkg-config --cflags --libs opencv` -std=c++11
+
+VPATH = ..
+
+# $(TARGET): test.o tensorUtil.o tensorCuda.o trtUtil.o errorHandle.o
+# 	$(CC) -Wall -g test.o trtUtil.o tensorUtil.o tensorCuda.o errorHandle.o -o testtrt $(INCPATHS) $(LIBPATHS) $(COMMON_LIBS)
+$(TARGET): test.o tensorUtil.o tensorCuda.o errorHandle.o
+	$(CC) -Wall -g test.o tensorUtil.o tensorCuda.o errorHandle.o -o testtrt $(INCPATHS) $(LIBPATHS) $(COMMON_LIBS)
+test.o: test.cu tensorUtil.h tensorCuda.h errorHandle.h
+	$(CUCC) -g -c test.cu $(INCPATHS) $(LIBPATHS) $(COMMON_LIBS)
+# trtUtil.o: trtUtil.cpp trtUtil.h errorHandle.h
+# 	$(CUCC) -c trtUtil.cpp $(INCPATHS) $(LIBPATHS) $(COMMON_LIBS)
+tensorUtil.o: tensorUtil.cu tensorUtil.h tensorCuda.h errorHandle.h
+	$(CUCC) -g -c tensorUtil.cu $(INCPATHS) $(LIBPATHS) $(COMMON_LIBS)
+tensorCuda.o: tensorCuda.cu tensorCuda.h errorHandle.h
+	$(CUCC) -g -c tensorCuda.cu $(INCPATHS) $(LIBPATHS) $(COMMON_LIBS)
+errorHandle.o: errorHandle.cu errorHandle.h
+	$(CUCC) -g -c errorHandle.cu $(INCPATHS) $(LIBPATHS) $(COMMON_LIBS)
+clean:
+	rm -f *.o

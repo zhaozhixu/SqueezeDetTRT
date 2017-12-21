@@ -79,6 +79,8 @@ static const char *CLASS_NAMES[] = {"car", "pedestrian", "cyclist"};
 // pixel mean used by the SqueezeDet's author
 static const float PIXEL_MEAN[3]{ 103.939f, 116.779f, 123.68f }; // in BGR order
 
+static const double DEFAULT_FPS = 10;
+
 struct predictions {
      float *klass;
      float *prob;
@@ -698,6 +700,7 @@ void drawBbox(cv::Mat &frame, struct predictions *preds)
 static const struct option longopts[] = {
      {"eval-list", 1, NULL, 'e'},
      {"video", 1, NULL, 'v'},
+     {"bbox-dir", 1, NULL, 'b'},
      {"x-shift", 1, NULL, 'x'},
      {"y-shift", 1, NULL, 'y'},
      {"help", 0, NULL, 'h'},
@@ -712,11 +715,13 @@ Options:\n\
        -e, --eval-list=EVAL_LIST_FILE          Provide an evaluation list file which contains\n\
                                                the image names (without extension names)\n\
                                                in IMAGE_DIR to be evaluated.\n\
-       -v, --video=VIDEO_FILE                  Detect an video file and play the detected video\n\
-                                               in a new window. IMAGE_DIR and RESULT_DIR are\n\
-                                               not needed.\n\
-       -x, --x-shift=X_SHIFT                   Shift all bbox downward X_SHIFT pixels.\n\
-       -y, --y-shift=Y_SHIFT                   Shift all bbox rightward Y_SHIFT pixels.\n\
+       -v, --video=VIDEO_FILE                  Detect a video file and play detected video\n\
+                                               in a new window. IMAGE_DIR and RESULT_DIR\n\
+                                               are not needed.\n\
+       -b, --bbox-dir=BBOX_DIR                 Draw bounding boxes in images or video and\n\
+                                               save them in BBOX_DIR.\n\
+       -x, --x-shift=X_SHIFT                   Shift all bboxes downward X_SHIFT pixels.\n\
+       -y, --y-shift=Y_SHIFT                   Shift all bboxes rightward Y_SHIFT pixels.\n\
        -h, --help                              Print this help and exit.\n";
 
 static void print_usage_and_exit()
@@ -729,15 +734,18 @@ int main(int argc, char *argv[])
 {
      int opt, optindex;
      DIR *dp;
-     char *img_dir = NULL, *result_dir = NULL, *eval_list = NULL, *video = NULL;
+     char *img_dir = NULL, *result_dir = NULL, *eval_list = NULL, *video = NULL, *bbox_dir = NULL;
      int x_shift = 0, y_shift = 0;
-     while ((opt = getopt_long(argc, argv, ":e:v:x:y:h", longopts, &optindex)) != -1) {
+     while ((opt = getopt_long(argc, argv, ":e:v:b:x:y:h", longopts, &optindex)) != -1) {
           switch (opt) {
           case 'e':
                eval_list = optarg;
                break;
           case 'v':
                video = optarg;
+               break;
+          case 'b':
+               bbox_dir = optarg;
                break;
           case 'x':
                x_shift = atoi(optarg);
@@ -761,12 +769,11 @@ int main(int argc, char *argv[])
      if (video == NULL) {
           img_dir = argv[optind++];
           result_dir = argv[optind];
-          if ((dp = opendir(result_dir)) == NULL) {
-               if (mkdir(result_dir, S_IRUSR|S_IWUSR|S_IXUSR|S_IRGRP|S_IXGRP|S_IROTH|S_IXOTH) == -1)
-                    err(EXIT_FAILURE, "%s", result_dir);
-          } else
-               closedir(dp);
+          validateDir(img_dir, 0);
+          validateDir(result_dir, 1);
      }
+     if (bbox_dir != NULL)
+          validateDir(bbox_dir, 1);
 
      // maloc host memory
      size_t inputSize = sizeof(float) * INPUT_C * INPUT_H * INPUT_W;
@@ -794,14 +801,17 @@ int main(int argc, char *argv[])
      // malloc device memory
      setUpDevice(convContext, interpretContext, anchors, INPUT_N);
 
-     // read image or video, alloc result path buffer
+     // read image or video, alloc path buffer
      FILE *result_fp;
      char *result_file_path = NULL;
      char *img_name_buf = NULL;
+     char *bbox_file_path = NULL;
      std::vector<std::string> imageList;
      int img_list_size;
+     double write_fps;
      cv::VideoCapture cap;
-     cv::Mat frame;
+     cv::VideoWriter writer;
+     cv::Mat frame, frame_origin;
      if (video == NULL) {
           result_file_path = sdt_path_alloc(NULL);
           img_name_buf = sdt_path_alloc(NULL);
@@ -811,8 +821,29 @@ int main(int argc, char *argv[])
      } else {
           cap = cv::VideoCapture(video);
           if (!cap.isOpened()) {
-               fprintf(stderr, "error reading video file: %s", video);
+               fprintf(stderr, "error reading video file: %s\n", video);
                exit(EXIT_FAILURE);
+          }
+          if (bbox_dir != NULL) {
+               if ((write_fps = cap.get(CV_CAP_PROP_FPS)) <= 0)
+                    write_fps = DEFAULT_FPS;
+               if (cap.read(frame) == false) {
+                    fprintf(stderr, "error reading first frame from file: %s\n", video);
+                    exit(EXIT_FAILURE);
+               }
+               bbox_file_path = sdt_path_alloc(NULL);
+               assemblePath(bbox_file_path, bbox_dir, video, "_bbox.avi");
+               int codec = CV_FOURCC('M', 'J', 'P', 'G');
+               // if (!writer.open("output.avi",
+               //             cap.get(CV_CAP_PROP_FOURCC),
+               //             cap.get(CV_CAP_PROP_FPS),
+               //             cv::Size(cap.get(CV_CAP_PROP_FRAME_WIDTH),
+               //                      cap.get(CV_CAP_PROP_FRAME_HEIGHT)), true)) {
+               if (!writer.open(bbox_file_path, codec, write_fps, frame.size(), true)) {
+                    fprintf(stderr, "error open cv::VideoWriter for file: %s\n", bbox_file_path);
+                    exit(EXIT_FAILURE);
+               }
+               sdt_free(bbox_file_path);
           }
      }
 
@@ -826,43 +857,46 @@ int main(int argc, char *argv[])
      for (;; frame_idx++) {
           start_fps = getUnixTime();
           if (video == NULL) {
-               if (frame_idx >= img_list_size) {
+               if (frame_idx >= img_list_size) { // end of images
                     frame_idx--;
                     break;
                }
                getFileName(img_name_buf, imageList[frame_idx].c_str());
                printf("(%d/%d) image: %s ", frame_idx+1, img_list_size, img_name_buf);
                CHECK(cudaEventRecord(start_imread, 0));
-               frame = cv::imread(imageList[frame_idx]);
-               if (frame.empty()) {
-                    printf("error reading image\n");
+               frame_origin = cv::imread(imageList[frame_idx]);
+               if (frame_origin.empty()) {
+                    fprintf(stderr, "error reading image\n");
                     continue;
                }
           } else {
                CHECK(cudaEventRecord(start_imread, 0));
-               if (cap.read(frame) == false) {
+               if (cap.read(frame_origin) == false) { // end of video
                     frame_idx--;
                     break;
                }
-               if (frame.empty()) {
-                    printf("error reading frame %d\n", frame_idx);
+               if (frame_origin.empty()) {
+                    fprintf(stderr, "error reading frame %d\n", frame_idx);
                     continue;
                }
           }
-          preprocessFrame(frame, INPUT_W, INPUT_H, &img_width, &img_height);
+          preprocessFrame(frame, frame_origin, INPUT_W, INPUT_H, &img_width, &img_height);
           prepareData(data, frame);
 
           doInference(convContext, interpretContext, data, inputSize, img_width, img_height, x_shift, y_shift, &preds, INPUT_N);
           detectionFilter(&preds, NMS_THRESH, PROB_THRESH);
 
           if (video == NULL) {
-               sprintResultFilePath(result_file_path, imageList[frame_idx].c_str(), result_dir);
+               assemblePath(result_file_path, result_dir, imageList[frame_idx].c_str(), ".txt");
                result_fp = fopen(result_file_path, "w");
                fprintResult(result_fp, &preds);
                fclose(result_fp);
           } else {
-               drawBbox(frame, &preds);
-               cv::imshow("detection", frame);
+               drawBbox(frame_origin, &preds);
+               if (bbox_dir != NULL) {
+                    writer.write(frame_origin);
+               }
+               cv::imshow("detection", frame_origin);
                key = cv::waitKey(1);
                if (key == ' ') {
                     cv::waitKey(0);
@@ -880,7 +914,8 @@ int main(int argc, char *argv[])
           misc_time_sum += timeMisc;
           fps_sum += fps;
      }
-
+     cap.release();
+     writer.release();
      // clean up device memory
      cleanUp();
 

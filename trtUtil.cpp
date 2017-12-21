@@ -27,7 +27,7 @@ static int isImageFile(char *name)
      return 0;
 }
 
-static char *changeSuffix(char *name, const char *new_suffix)
+char *changeSuffix(char *name, const char *new_suffix)
 {
      assert(name && new_suffix);
      char *suffix;
@@ -38,15 +38,6 @@ static char *changeSuffix(char *name, const char *new_suffix)
      strcpy(suffix, new_suffix);
 
      return name;
-}
-
-double getUnixTime(void)
-{
-     struct timespec tv;
-
-     if(clock_gettime(CLOCK_REALTIME, &tv) != 0) return 0;
-
-     return (tv.tv_sec + (tv.tv_nsec / 1.0e9));
 }
 
 char *getFileName(char *buf, const char *path)
@@ -64,6 +55,59 @@ char *getFileName(char *buf, const char *path)
      sdt_free(path_copy);
 
      return buf;
+}
+
+char *joinPath(char *prepath, char *subpath)
+{
+     assert(prepath && subpath);
+     char *pre_tail;
+
+     pre_tail = prepath + strlen(prepath) - 1;
+     if (*pre_tail != '/')
+          *++pre_tail = '/';
+     strcpy(++pre_tail, subpath);
+
+     return prepath;
+}
+
+char *assemblePath(char *buf, const char *dir, const char *file_path, const char *suffix)
+{
+     char *file_path_cpy = (char *)sdt_alloc(strlen(file_path) + 1);
+     strcpy(file_path_cpy, file_path);
+     char *file_name;
+     if ((file_name = strrchr(file_path_cpy, '/')) == NULL)
+          file_name = file_path_cpy;
+     else
+          file_name++;
+     strcpy(buf, dir);
+     joinPath(buf, file_name);
+     changeSuffix(buf, suffix);
+     sdt_free(file_path_cpy);
+     return buf;
+}
+
+void validateDir(const char *dir, int do_mkdir)
+{
+     DIR *dp;
+     if ((dp = opendir(dir)) == NULL) {
+          if (do_mkdir) {
+               if (mkdir(dir, S_IRUSR|S_IWUSR|S_IXUSR|S_IRGRP|S_IXGRP|S_IROTH|S_IXOTH) == -1)
+                    err(EXIT_FAILURE, "%s", dir);
+          } else {
+               err(EXIT_FAILURE, "%s", dir);
+          }
+     } else {
+          closedir(dp);
+     }
+}
+
+double getUnixTime(void)
+{
+     struct timespec tv;
+
+     if(clock_gettime(CLOCK_REALTIME, &tv) != 0) return 0;
+
+     return (tv.tv_sec + (tv.tv_nsec / 1.0e9));
 }
 
 std::vector<std::string> getImageList(const char *pathname, const char *eval_list)
@@ -108,6 +152,7 @@ std::vector<std::string> getImageList(const char *pathname, const char *eval_lis
      return imgList;
 }
 
+// not used
 cv::Mat readImage(const std::string& filename, int width, int height, float *img_width, float *img_height)
 {
      cv::Mat img = cv::imread(filename);
@@ -122,35 +167,15 @@ cv::Mat readImage(const std::string& filename, int width, int height, float *img
      return img;
 }
 
-void preprocessFrame(cv::Mat &frame, int width, int height, float *img_width, float *img_height)
+void preprocessFrame(cv::Mat &frame, cv::Mat &frame_origin, int width, int height, float *img_width, float *img_height)
 {
-     assert(!frame.empty());
+     assert(!frame_origin.empty());
 
      if (img_width && img_height) {
-          *img_width = frame.size().width;
-          *img_height = frame.size().height;
+          *img_width = frame_origin.size().width;
+          *img_height = frame_origin.size().height;
      }
-     cv::resize(frame, frame, cv::Size(width, height));
-}
-
-char *sprintResultFilePath(char *buf, const char *img_name, const char *res_dir)
-{
-     DIR *dp;
-     if ((dp = opendir(res_dir)) == NULL)
-          err(EXIT_FAILURE, "%s", res_dir);
-     closedir(dp);
-
-     char *img_name_cpy = (char *)sdt_alloc(sizeof(char) * (strlen(img_name) + strlen(".txt") + 1));
-     strcpy(img_name_cpy, img_name);
-     char *file_name;
-     if ((file_name = strrchr(img_name_cpy, '/')) == NULL)
-          file_name = img_name_cpy;
-     else
-          file_name++;
-     sprintf(buf, "%s/%s", res_dir, file_name);
-     changeSuffix(buf, ".txt");
-     sdt_free(img_name_cpy);
-     return buf;
+     cv::resize(frame_origin, frame, cv::Size(width, height));
 }
 
 // Our weight files are in a very simple space delimited format.
