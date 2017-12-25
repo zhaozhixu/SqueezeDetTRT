@@ -5,14 +5,14 @@ This repository contains an implementation of SqueezeDet, a ["unified, small, lo
 You can find the original squeezeDet implementation, using Tensorflow, [here](https://github.com/BichenWuUCB/squeezeDet).
 
 ## Prerequisites
-This requires Ubuntu 16 (Xenial Xeres) or later to get the proper package versions. It should work for other distributions, but you will probably need to change some package names. From a terminal, execute the following:
+This requires Ubuntu 16 (Xenial Xeres) or later to get the proper libraries work. It should work for other distributions, but I haven't tested them yet. From a terminal, execute the following:
 ```
 sudo apt-get -y make gcc g++ python perl
 ```
 You also have to install OpenCV 3.3 or higher according to its website [here](https://docs.opencv.org/3.3.1/d7/d9f/tutorial_linux_install.html).
 
 And you also have to install CUDA 8.0 and TensorRT 3.0 libraries, according to their websites [CUDA Toolkit 8.0](https://developer.nvidia.com/cuda-80-ga2-download-archive)
-and [TensorRT](https://developer.nvidia.com/rdp/form/tensorrt-download-survey).
+and [TensorRT](https://developer.nvidia.com/rdp/form/tensorrt-download-survey). Also remember to put `nvcc` (usually in `/usr/local/cuda/bin`) in environment variable `PATH`.
 
 ## Build
 Use `make` from a terminal in this folder to compile executable binary.
