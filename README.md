@@ -21,17 +21,17 @@ Use `make` from a terminal in this folder to compile executable binary.
 After compilation, use `./sqdtrt -h` to learn the usage for this program.
 
 ## Demo
-There are two demoes for image and video detection below. The image and video for demoes are located in `data/example`.
+There are two demoes for image and video detections below. The image and video for demoes are located in `data/example`.
 
 ### Image detection
-The following command will detect an image in `data/example` and print bounding boxes result using KITTI format in `data/result/sample.txt`
+The following command will detect an image in `data/example` and print bounding boxes using KITTI format in `data/result/sample.txt`
 ```
 ./sqdtrt -e data/example/val.txt data/example data/result
 ```
 
 ### Video detection
 The following command will detect a video in `data/example` and play it with bounding boxes in a new window.
-There will be some dislocation due to the image resize operation (maybe?), so we have to use the `-x '-20' -y '-20'` arguments to fix it.
+There is some slight dislocation due to the image resize operation (maybe?), so we have to use the `-x '-20' -y '-20'` arguments to fix it.
 ```
 ./sqdtrt -v data/example/20110926.avi -x '-20' -y '-20'
 ```
