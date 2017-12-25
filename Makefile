@@ -54,14 +54,14 @@ TRIPLE?=x86_64-linux
 CUDA_INSTALL_DIR = /usr/local/cuda-8.0
 CUDA_LIBDIR = lib
 INCPATHS    =-I"$(CUDA_INSTALL_DIR)/include" -I"/usr/local/include"
-LIBPATHS    =-L"$(CUDA_INSTALL_DIR)/targets/$(TRIPLE)/$(CUDA_LIBDIR)" -L"/usr/local/lib" -L"$/usr/local/cuda/lib64" -L"$(CUDA_INSTALL_DIR)/$(CUDA_LIBDIR)"
+LIBPATHS    =-L"$(CUDA_INSTALL_DIR)/targets/$(TRIPLE)/$(CUDA_LIBDIR)" -L"/usr/local/lib" -L"/usr/local/cuda/lib64" -L"$(CUDA_INSTALL_DIR)/$(CUDA_LIBDIR)"
 LIBS = $(LIBPATHS) -lcudart -lcudart_static -lnvinfer `pkg-config --libs opencv`
 CFLAGS += $(INCPATHS) `pkg-config --cflags opencv`
 CUFLAGS += $(INCPATHS) `pkg-config --cflags opencv`
 LDFLAGS += $(LIBS)
 
 .PHONY: all
-all: $(OUTDIR)/$(TARGET) $(TESTDIR)/$(TEST_TARGET)
+all: $(OUTDIR)/$(TARGET)
 
 $(OUTDIR)/$(TARGET): $(OBJS) $(CUOBJS) $(TESTOBJS)
 	$(ECHO) Linking: $^
@@ -86,7 +86,7 @@ $(OBJDIR)/%.o: %.cu
 	$(AT)$(CUCC) $(CUFLAGS) -c -o $@ $<
 
 clean:
-	rm -rf $(OBJDIR) $(TESTOBJDIR)
+	rm -rf $(OBJDIR)
 
 ifneq "$(MAKECMDGOALS)" "clean"
   -include $(OBJDIR)/*.d
