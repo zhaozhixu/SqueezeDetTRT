@@ -1,5 +1,5 @@
 .SUFFIXES:
-TARGET = testtrt
+TARGET = sqdtrt
 CC = g++
 CUCC = nvcc
 
@@ -42,16 +42,13 @@ define make-depend-cu
   rm -f $3.$$$$
 endef
 
-SRCS_DIR = ..
-SRCS_CPP = $(SRCS_DIR)/*.cpp *.cpp
-SRCS_C =  $(SRCS_DIR)/*.c *.c
-SRCS_CU =  $(SRCS_DIR)/*.cu *.cu
+# SRCS_C = sqdtrt.cpp trtUtil.cpp common.cpp tensorUtil.cu errorHandle.cu sdt_alloc.c
+SRCS = *.cpp *.c *.cu
 OUTDIR = .
-# OBJDIR = $(call concat,$(OUTDIR),/obj)
-OBJDIR = $(call concat,$(SRCS_DIR),/obj)
-OBJS   = $(patsubst %.c, $(OBJDIR)/%.o, $(SRCS_C))
-OBJS  += $(patsubst %.cpp, $(OBJDIR)/%.o, $(SRCS_CPP))
-CUOBJS = $(patsubst %.cu, $(OBJDIR)/%.o, $(SRCS_CU))
+OBJDIR = $(call concat,$(OUTDIR),/obj)
+OBJS   = $(patsubst %.c, $(OBJDIR)/%.o, $(wildcard *.c))
+OBJS  += $(patsubst %.cpp, $(OBJDIR)/%.o, $(wildcard *.cpp))
+CUOBJS = $(patsubst %.cu, $(OBJDIR)/%.o, $(wildcard *.cu))
 
 TRIPLE?=x86_64-linux
 CUDA_INSTALL_DIR = /usr/local/cuda-8.0
@@ -64,9 +61,9 @@ CUFLAGS += $(INCPATHS) `pkg-config --cflags opencv`
 LDFLAGS += $(LIBS)
 
 .PHONY: all
-all: $(TARGET)
+all: $(OUTDIR)/$(TARGET) $(TESTDIR)/$(TEST_TARGET)
 
-$(OUTDIR)/$(TARGET): $(OBJS) $(CUOBJS)
+$(OUTDIR)/$(TARGET): $(OBJS) $(CUOBJS) $(TESTOBJS)
 	$(ECHO) Linking: $^
 	$(AT)$(CC) -o $@ $^ $(LDFLAGS)
 
@@ -89,7 +86,7 @@ $(OBJDIR)/%.o: %.cu
 	$(AT)$(CUCC) $(CUFLAGS) -c -o $@ $<
 
 clean:
-	rm -rf $(OBJDIR)
+	rm -rf $(OBJDIR) $(TESTOBJDIR)
 
 ifneq "$(MAKECMDGOALS)" "clean"
   -include $(OBJDIR)/*.d

@@ -1,40 +1,31 @@
 #include <cassert>
+#include <cstring>
+#include <cstdlib>
+#include <cstdio>
+#include <cmath>
 #include <fstream>
 #include <sstream>
 #include <iostream>
-#include <cmath>
+#include <memory>
+#include <algorithm>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <dirent.h>
 #include <time.h>
-#include <cuda_runtime_api.h>
-#include <cudnn.h>
-#include <cublas_v2.h>
-#include <memory>
-#include <cstring>
-#include <cstdlib>
-#include <algorithm>
-#include <opencv2/opencv.hpp>
-#include <cstdio>
 #include <unistd.h>
 #include <err.h>
-#include <thrust/sort.h>
-#include <thrust/execution_policy.h>
+#include <opencv2/opencv.hpp>
+#include <cuda_runtime.h>
 
 // #define _GNU_SOURCE
 #include <getopt.h>
 
-#include "NvCaffeParser.h"
-#include "NvInferPlugin.h"
 #include "common.h"
 #include "tensorUtil.h"
 #include "trtUtil.h"
 #include "sdt_alloc.h"
 
 static Logger gLogger;
-using namespace nvinfer1;
-using namespace nvcaffeparser1;
-using namespace plugin;
 
 static const int INPUT_N = 1;   // one image at a time
 static const int INPUT_C = 3;
@@ -63,10 +54,10 @@ static const char* INPUT_NAME = "data";
 static const char* CONVOUT_NAME = "conv_out";
 static const char* CLASS_INPUT_NAME = "class_slice";
 static const char* CONF_INPUT_NAME = "confidence_slice";
-static const char* BBOX_INPUT_NAME = "bbox_slice";
+// static const char* BBOX_INPUT_NAME = "bbox_slice";
 static const char* CLASS_OUTPUT_NAME = "pred_class_probs";
 static const char* CONF_OUTPUT_NAME = "pred_confidence_score";
-static const char* BBOX_OUTPUT_NAME = "bbox_delta";
+// static const char* BBOX_OUTPUT_NAME = "bbox_delta";
 
 static const int ANCHORS_PER_GRID = 9;
 static const int ANCHOR_SIZE = 4;
@@ -591,7 +582,7 @@ void cleanUp()
 float *prepareData(float *data, cv::Mat &frame)
 {
      assert(data && !frame.empty());
-     int volChl = INPUT_H*INPUT_W;
+     unsigned int volChl = INPUT_H*INPUT_W;
      for (int c = 0; c < INPUT_C; ++c)
      {
           // the color image to input should be in BGR order
@@ -733,7 +724,6 @@ static void print_usage_and_exit()
 int main(int argc, char *argv[])
 {
      int opt, optindex;
-     DIR *dp;
      char *img_dir = NULL, *result_dir = NULL, *eval_list = NULL, *video = NULL, *bbox_dir = NULL;
      int x_shift = 0, y_shift = 0;
      while ((opt = getopt_long(argc, argv, ":e:v:b:x:y:h", longopts, &optindex)) != -1) {
@@ -808,7 +798,7 @@ int main(int argc, char *argv[])
      char *bbox_file_path = NULL;
      std::vector<std::string> imageList;
      int img_list_size;
-     double write_fps;
+     // double write_fps;
      cv::VideoCapture cap;
      cv::VideoWriter writer;
      cv::Mat frame, frame_origin;
@@ -825,21 +815,21 @@ int main(int argc, char *argv[])
                exit(EXIT_FAILURE);
           }
           if (bbox_dir != NULL) {
-               if ((write_fps = cap.get(CV_CAP_PROP_FPS)) <= 0)
-                    write_fps = DEFAULT_FPS;
-               if (cap.read(frame) == false) {
-                    fprintf(stderr, "error reading first frame from file: %s\n", video);
-                    exit(EXIT_FAILURE);
-               }
+               // if ((write_fps = cap.get(CV_CAP_PROP_FPS)) <= 0)
+               //      write_fps = DEFAULT_FPS;
+               // if (cap.read(frame) == false) {
+               //      fprintf(stderr, "error reading first frame from file: %s\n", video);
+               //      exit(EXIT_FAILURE);
+               // }
                bbox_file_path = sdt_path_alloc(NULL);
                assemblePath(bbox_file_path, bbox_dir, video, "_bbox.avi");
-               int codec = CV_FOURCC('M', 'J', 'P', 'G');
-               // if (!writer.open("output.avi",
-               //             cap.get(CV_CAP_PROP_FOURCC),
-               //             cap.get(CV_CAP_PROP_FPS),
-               //             cv::Size(cap.get(CV_CAP_PROP_FRAME_WIDTH),
-               //                      cap.get(CV_CAP_PROP_FRAME_HEIGHT)), true)) {
-               if (!writer.open(bbox_file_path, codec, write_fps, frame.size(), true)) {
+               // int codec = CV_FOURCC('M', 'J', 'P', 'G');
+               if (!writer.open(bbox_file_path,
+                                CV_FOURCC('M', 'J', 'P', 'G'),
+                                cap.get(CV_CAP_PROP_FPS),
+                                cv::Size(cap.get(CV_CAP_PROP_FRAME_WIDTH),
+                                         cap.get(CV_CAP_PROP_FRAME_HEIGHT)), true)) {
+               // if (!writer.open(bbox_file_path, codec, write_fps, frame.size(), true)) {
                     fprintf(stderr, "error open cv::VideoWriter for file: %s\n", bbox_file_path);
                     exit(EXIT_FAILURE);
                }
