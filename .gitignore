@@ -8,6 +8,7 @@
 *.wts
 *.txt
 *.avi
+*.org
 testtrt
 sqdtrt
 GPATH
@@ -16,6 +17,7 @@ GSYMS
 GTAGS
 data/
 obj/
+!data/example
 !data/example/20110926.avi
 !data/example/sample.png
 !data/example/val.txt
