@@ -2,20 +2,29 @@
 #define _TRT_UTIL_H_
 
 #include <opencv2/opencv.hpp>
-#include "NvInfer.h"
+/* #include "NvInfer.h" */
 
-using namespace nvinfer1;
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 char *changeSuffix(char *name, const char *new_suffix);
 double getUnixTime(void);
 char *getFileName(char *buf, const char *path);
 char *joinPath(char *prepath, char *subpath);
 void validateDir(const char *dir, int do_mkdir);
-std::vector<std::string> getImageList(const char *pathname, const char *eval_list);
 char *assemblePath(char *buf, const char *dir, const char *file_path, const char *suffix);
-std::map<std::string, Weights> loadWeights(const std::string file);
-cv::Mat readImage(const std::string& filename, int width, int height, float *img_width, float *img_height);
-void preprocessFrame(cv::Mat &frame, cv::Mat &frame_origin, int width, int height, float *img_width, float *img_height);
+
+#ifdef __cplusplus
+}
+#endif
+
+/* using namespace nvinfer1; */
+
+/* std::vector<std::string> getImageList(const char *pathname, const char *eval_list); */
+/* std::map<std::string, Weights> loadWeights(const std::string file); */
+/* cv::Mat readImage(const std::string& filename, int width, int height, float *img_width, float *img_height); */
+/* void preprocessFrame(cv::Mat &frame, cv::Mat &frame_origin, int width, int height, float *img_width, float *img_height); */
 
 /* class Reshape: public IPlugin */
 /* { */

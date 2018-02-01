@@ -20,13 +20,12 @@
 // #define _GNU_SOURCE
 // #include <getopt.h>
 
+#include "NvInfer.h"
 #include "common.h"
 #include "tensorUtil.h"
 #include "trtUtil.h"
 #include "sdt_alloc.h"
 #include "sdt_infer.h"
-
-static Logger gLogger;
 
 static const int INPUT_N = 1;   // one image at a time
 static const int INPUT_C = 3;
@@ -106,10 +105,122 @@ static cudaStream_t stream;
 static cudaEvent_t start_detect, stop_detect, start_misc, stop_misc;
 static float timeDetect, timeMisc;
 
+using namespace nvinfer1;
+
+// not used
+cv::Mat readImage(const std::string& filename, int width, int height, float *img_width, float *img_height)
+{
+     cv::Mat img = cv::imread(filename);
+     if (img.empty())
+          return img;
+
+     if (img_width && img_height) {
+          *img_width = img.size().width;
+          *img_height = img.size().height;
+     }
+     cv::resize(img, img, cv::Size(width, height));
+     return img;
+}
+
+void preprocessFrame(cv::Mat &frame, cv::Mat &frame_origin, int width, int height, float *img_width, float *img_height)
+{
+     assert(!frame_origin.empty());
+
+     if (img_width && img_height) {
+          *img_width = frame_origin.size().width;
+          *img_height = frame_origin.size().height;
+     }
+     cv::resize(frame_origin, frame, cv::Size(width, height));
+}
+
+// Our weight files are in a very simple space delimited format.
+// [type] [size] <data x size in hex>
+std::map<std::string, Weights> loadWeights(const std::string file)
+{
+    std::map<std::string, Weights> weightMap;
+	std::ifstream input(file);
+	assert(input.is_open() && "Unable to load weight file.");
+    int32_t count;
+    input >> count;
+    assert(count > 0 && "Invalid weight map file.");
+    while(count--) {
+        Weights wt{DataType::kFLOAT, nullptr, 0};
+        uint32_t type, size;
+        std::string name;
+        input >> name >> std::dec >> type >> size;
+        wt.type = static_cast<DataType>(type);
+        if (wt.type == DataType::kFLOAT) {
+            uint32_t *val = reinterpret_cast<uint32_t*>(sdt_alloc(sizeof(val) * size)); // TODO: wrong sizeof oprand
+            for (uint32_t x = 0, y = size; x < y; ++x)
+            {
+                input >> std::hex >> val[x];
+
+            }
+            wt.values = val;
+        } else if (wt.type == DataType::kHALF) {
+            uint16_t *val = reinterpret_cast<uint16_t*>(sdt_alloc(sizeof(val) * size)); // wrong sizeof oprand
+            for (uint32_t x = 0, y = size; x < y; ++x)
+            {
+                input >> std::hex >> val[x];
+            }
+            wt.values = val;
+        }
+        wt.count = size;
+        weightMap[name] = wt;
+    }
+    return weightMap;
+}
+
+// Logger for GIE info/warning/errors
+class Logger : public nvinfer1::ILogger
+{
+public:
+     void log(nvinfer1::ILogger::Severity severity, const char* msg) override
+     {
+          // suppress info-level messages
+          if (severity == Severity::kINFO) return;
+
+          switch (severity)
+               {
+               case Severity::kINTERNAL_ERROR: std::cerr << "INTERNAL_ERROR: "; break;
+               case Severity::kERROR: std::cerr << "ERROR: "; break;
+               case Severity::kWARNING: std::cerr << "WARNING: "; break;
+               case Severity::kINFO: std::cerr << "INFO: "; break;
+               default: std::cerr << "UNKNOWN: "; break;
+               }
+          std::cerr << msg << std::endl;
+     }
+};
+
+static Logger gLogger;
+
+static std::string locateFile_1(const std::string& input, const std::vector<std::string> & directories)
+{
+     std::string file;
+     const int MAX_DEPTH{10};
+     bool found{false};
+     for (auto &dir : directories)
+          {
+               file = dir + input;
+               for (int i = 0; i < MAX_DEPTH && !found; i++)
+                    {
+                         std::ifstream checkFile(file);
+                         found = checkFile.is_open();
+                         if (found) break;
+                         file = "../" + file;
+                    }
+               if (found) break;
+               file.clear();
+          }
+
+     assert(!file.empty() && "Could not find a file due to it not existing in the data directory.");
+     return file;
+}
+
 static std::string locateFile(const std::string& input)
 {
      std::vector<std::string> dirs{"data/"};
-     return locateFile(input, dirs);
+     return locateFile_1(input, dirs);
 }
 
 static ILayer*
@@ -645,7 +756,7 @@ static void detectionFilter(struct predictions *preds, float nms_thresh, float p
 
 static void sprintResult(char *buf, struct predictions *preds)
 {
-     assert(fp && preds->bbox && preds->klass && preds->prob && preds->keep);
+     assert(buf && preds->bbox && preds->klass && preds->prob && preds->keep);
 
      int i;
      float *bbox;

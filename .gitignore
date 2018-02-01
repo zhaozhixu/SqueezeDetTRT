@@ -9,12 +9,17 @@
 *.txt
 *.avi
 *.org
+*.sh
+*.so
+*.bak4so
+testso
 testtrt
 sqdtrt
 GPATH
 GRTAGS
 GSYMS
 GTAGS
+scripts/
 data/
 obj/
 !data/example

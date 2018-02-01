@@ -17,6 +17,13 @@ CUFLAGS +=
 LDFLAGS += -O3
 endif
 
+ifeq "$(MAKECMDGOALS)" "libso"
+CFLAGS += -fPIC
+CUFLAGS += --compiler-options '-fPIC' --linker-options '-Wl,--no-undefined -shared' -shared
+LDFLAGS += -shared -Wl,--no-undefined
+LIBTARGET = lib$(TARGET).so
+endif
+
 ifdef VERBOSE
 AT =
 else
@@ -60,8 +67,13 @@ CFLAGS += $(INCPATHS) `pkg-config --cflags opencv`
 CUFLAGS += $(INCPATHS) `pkg-config --cflags opencv`
 LDFLAGS += $(LIBS)
 
-.PHONY: all
+.PHONY: all libso
 all: $(OUTDIR)/$(TARGET)
+libso: $(OUTDIR)/$(LIBTARGET)
+
+$(OUTDIR)/$(LIBTARGET): $(OBJS) $(CUOBJS) $(TESTOBJS)
+	$(ECHO) Linking: $^
+	$(AT)$(CC) -o $@ $^ $(LDFLAGS)
 
 $(OUTDIR)/$(TARGET): $(OBJS) $(CUOBJS) $(TESTOBJS)
 	$(ECHO) Linking: $^
