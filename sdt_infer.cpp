@@ -829,8 +829,14 @@ void sdt_infer_detect(unsigned char *input, int height, int width, int x_shift, 
 {
      cv::Mat frame_origin, frame;
      float img_height, img_width;
+     unsigned char *input_copy;
+     size_t input_size;
 
-     frame_origin = cv::Mat(height, width,  CV_8UC(3), input);
+     input_size = sizeof(char) * height * width * 3;
+     input_copy = (unsigned char *)sdt_alloc(input_size);
+     memcpy(input_copy, input, input_size);
+     frame_origin = cv::Mat(height, width, CV_8UC(3), input_copy);
+     frame = cv::Mat(INPUT_H, INPUT_W, CV_8UC(3));
      preprocessFrame(frame, frame_origin, INPUT_W, INPUT_H, &img_width, &img_height);
      prepareData(data, frame);
      doInference(convContext, interpretContext, data, inputSize, img_width, img_height, x_shift, y_shift, &preds, INPUT_N);
@@ -843,6 +849,7 @@ void sdt_infer_detect(unsigned char *input, int height, int width, int x_shift, 
      if (res_preds)
           *res_preds = &preds;
 
+     sdt_free(input_copy);
      frame_origin.release();
      frame.release();
 }

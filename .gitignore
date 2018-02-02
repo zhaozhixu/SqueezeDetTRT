@@ -19,7 +19,7 @@ GPATH
 GRTAGS
 GSYMS
 GTAGS
-scripts/
+scripts
 data/
 obj/
 !data/example
