@@ -12,6 +12,7 @@
 *.sh
 *.so
 *.bak4so
+*.log
 testso
 testtrt
 sqdtrt
@@ -22,6 +23,7 @@ GTAGS
 scripts
 data/
 obj/
+test_img/
 !data/example
 !data/example/20110926.avi
 !data/example/sample.png
