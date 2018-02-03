@@ -12,7 +12,7 @@ def detect_init():
     global init_flag, libsqdtrt
     if init_flag:
         return
-    ret = os.system("make libso >> make.log") >> 8
+    ret = os.system("date >> make.log; make libso | tee -a make.log") >> 8
     if ret != 0:
         print("Oops! Make failed. exit " % ret)
         exit(1)

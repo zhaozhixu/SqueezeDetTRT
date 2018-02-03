@@ -22,8 +22,8 @@ if __name__ == "__main__":
     teamName = 'XJTU-IAIR-Falcon'
     ## !!!! please specify the dir here, and please put all the images for test in the folder "images".
     ## Important! You can specify the folder in your local test. But for the sumission, DAC folder is fixed as follows
-    #DAC = '/home/DACSDC_GPU' ## uncomment this line when submitting your code
-    DAC = './test_img'
+    DAC = '/home/DACSDC_GPU' ## uncomment this line when submitting your code
+    #DAC = './test_img'
     [imgDir, resultDir, timeDir, xmlDir, myXmlDir, allTimeFile] = procfunc.setupDir(DAC, teamName)
 
     ############### processing for object detection and tracking ###########################################################
