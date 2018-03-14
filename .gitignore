@@ -33,3 +33,5 @@ evaluate_object
 Validation-100/
 make.log
 XJTU-IAIR-Falcon
+!cleanup.sh
+!gen_src.sh
