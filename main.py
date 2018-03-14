@@ -7,7 +7,6 @@ import procfunc
 import math
 import numpy as np
 import time
-import cv2
 #### !!!! you can import any package needed for your program ######
 
 if __name__ == "__main__":
@@ -22,10 +21,11 @@ if __name__ == "__main__":
     ## !!!! Please specify your team name here
     teamName = 'XJTU-IAIR-Falcon'
     ## !!!! please specify the dir here, and please put all the images for test in the folder "images".
-    ## Important! You can specify the folder in your local test. But for the sumission, DAC folder is fixed as follow
+    ## Important! You can specify the folder in your local test. But for the sumission, DAC folder is fixed as follows
     #DAC = '/home/DACSDC_GPU/valiImg' ## uncomment this line when submitting your code
-    DAC = './Validation-100'
-    [imgDir, resultDir, timeDir, xmlDir, myXmlDir, allTimeFile] = procfunc.setupDir(DAC, teamName
+    DAC = 'Validation-100'
+    [imgDir, resultDir, timeDir, xmlDir, myXmlDir, allTimeFile] = procfunc.setupDir(DAC, teamName)
+
     ############### processing for object detection and tracking ###########################################################
     ### load all the images names
     [allImageName, imageNum] = procfunc.getImageNames(imgDir)
@@ -49,7 +49,6 @@ if __name__ == "__main__":
                     break
             # inputImageData = ImageDramBatch[start:end, :,:,:]
             inputImageData = ImageDramBatch[start:end]
-
             ############ !!!!!!!!!! your detection and tracking code, please revise the function: detectionAndTracking() !!!!!!!############
             resultRectangle[i * batchNumDiskToDram + start:i * batchNumDiskToDram + end, :] = procfunc.detectionAndTracking(inputImageData, end-start)
     time_end = time.time()
