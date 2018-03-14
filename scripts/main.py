@@ -36,6 +36,7 @@ if __name__ == "__main__":
     imageProcTimeEachRead = math.ceil(batchNumDiskToDram/batchNumDramToGPU)
     resultRectangle = np.zeros((imageNum, 4)) ## store all the results about tracking accuracy
 
+    procfunc.det_init()
     time_start=time.time()
     for i in range(imageReadTime):
         ImageDramBatch = procfunc.readImagesBatch(imgDir,allImageName, imageNum, i, batchNumDiskToDram)
@@ -51,7 +52,7 @@ if __name__ == "__main__":
             resultRectangle[i * batchNumDiskToDram + start:i * batchNumDiskToDram + end, :] = procfunc.detectionAndTracking(inputImageData, end-start)
     time_end = time.time()
     resultRunTime = time_end-time_start
-
+    procfunc.det_cleanup()
     ############### write results (write time to allTimeFile and detection results to xml) #################################
     procfunc.storeResultsToXML(resultRectangle, allImageName, myXmlDir)
     procfunc.write(imageNum,resultRunTime,teamName, allTimeFile)

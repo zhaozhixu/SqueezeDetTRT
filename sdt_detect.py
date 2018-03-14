@@ -48,7 +48,7 @@ def detect_detect(data, height, width, x_shift, y_shift):
             result[i].append(float(m.group(4))) # x_max
             result[i].append(float(m.group(5))) # y_max
             result[i].append(float(m.group(6))) # prob
-            # print("%d detect: %.2fms misc: %.2fms class: %s x_min: %.2f y_min: %.2f x_max: %.2f y_max: %.2f prob: %.3f" % (i, time_detect, time_misc, result[i][0], result[i][1], result[i][2], result[i][3], result[i][4], result[i][5]))
+            # print("detect: %.2fms misc: %.2fms class: %s x_min: %.2f y_min: %.2f x_max: %.2f y_max: %.2f prob: %.3f" % (time_detect, time_misc, result[i][0], result[i][1], result[i][2], result[i][3], result[i][4], result[i][5]))
             i = i + 1
 
     return result

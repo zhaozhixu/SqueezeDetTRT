@@ -82,6 +82,12 @@ def readImagesBatch(imgDir, allImageName, imageNum, iter, batchNumDiskToDram):
         batchImageData[i-start,:,:] = img[:,:]
     return batchImageData
 
+def det_init():
+    detect_init()
+
+def det_cleanup():
+    detect_cleanup()
+    
 ## detection and tracking algorithm
 def detectionAndTracking(inputImageData, batchNum):
     # result = np.random.randn(batchNum, 4)

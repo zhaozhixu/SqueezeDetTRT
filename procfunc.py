@@ -75,6 +75,7 @@ def readImagesBatch(imgDir, allImageName, imageNum, iter, batchNumDiskToDram):
     end = start + batchNumDiskToDram
     if end > imageNum:
         end = imageNum
+<<<<<<< HEAD
     # batchImageData = np.zeros((end-start, imageSize[0], imageSize[1], imageSize[2]))
     batchImageData = []
     for i in range(start, end):
@@ -91,6 +92,13 @@ def readImagesBatch(imgDir, allImageName, imageNum, iter, batchNumDiskToDram):
         # if key == " ":
         #     cv2.waitKey(0)
 
+=======
+    batchImageData = np.zeros((end-start, imageSize[0], imageSize[1], imageSize[2]))
+    for i in range(start, end):
+        imgName = imgDir + '/' + allImageName[i]
+        img = cv2.imread(imgName, 1)
+        batchImageData[i-start,:,:] = img[:,:]
+>>>>>>> 30801ea6e1c3b53a20ad7ec0e204593b37de98ee
     return batchImageData
 
 def det_init():
@@ -98,15 +106,22 @@ def det_init():
 
 def det_cleanup():
     detect_cleanup()
+<<<<<<< HEAD
 
 ## detection and tracking algorithm
 def detectionAndTracking(inputImageData, batchNum):
     # print inputImageData.shape
     # exit(1)
+=======
+    
+## detection and tracking algorithm
+def detectionAndTracking(inputImageData, batchNum):
+>>>>>>> 30801ea6e1c3b53a20ad7ec0e204593b37de98ee
     # result = np.random.randn(batchNum, 4)
     result = np.zeros([batchNum, 4])
     for i in range(batchNum):
         data = inputImageData[i]
+<<<<<<< HEAD
         # print data.shape
         # cv2.imshow("origin", data)
         # key = cv2.waitKey(20)
@@ -120,6 +135,9 @@ def detectionAndTracking(inputImageData, batchNum):
             result[i, 2] = -1
             result[i, 3] = -1
             continue
+=======
+        res = detect_detect(data.ctypes.data_as(c_void_p), data.shape[0], data.shape[1], -20, -20)
+>>>>>>> 30801ea6e1c3b53a20ad7ec0e204593b37de98ee
         x_min = res[0][1]
         y_min = res[0][2]
         x_max = res[0][3]
