@@ -733,8 +733,12 @@ static void detectionFilter(struct predictions *preds, float nms_thresh, float p
      int *keep = preds->keep;
      float *klass = preds->klass;
      float *bbox = preds->bbox;
+     // for (i = 0; i < num; i++)
+     //      keep[i] = 0;
+     // keep[0] = 1;
      for (i = 0; i < num; i++)
           keep[i] = 1;
+     // keep[0] = 1;
      for (i = 0; i < num; i++) {
           // keep[i] = 1;
           // if (probs[i] < prob_thresh) {
@@ -761,10 +765,11 @@ static void sprintResult(char *buf, struct predictions *preds)
      int i;
      float *bbox;
      for (i = 0; i < preds->num; i++) {
+          // if (!preds->keep[i] || preds->prob[i] < PLOT_PROB_THRESH)
           if (!preds->keep[i])
                continue;
           bbox = &preds->bbox[i * OUTPUT_BBOX_SIZE];
-          sprintf(buf, "%s -1 -1 0.0 %.2f %.2f %.2f %.2f 0.0 0.0 0.0 0.0 0.0 0.0 0.0 %.3f\n",
+          sprintf(buf+strlen(buf), "%s -1 -1 0.0 %.2f %.2f %.2f %.2f 0.0 0.0 0.0 0.0 0.0 0.0 0.0 %.3f\n",
                   CLASS_NAMES[(int)preds->klass[i]], bbox[0], bbox[1], bbox[2], bbox[3], preds->prob[i]);
      }
 }
@@ -776,12 +781,31 @@ static void fprintResult(FILE *fp, struct predictions *preds)
      int i;
      float *bbox;
      for (i = 0; i < preds->num; i++) {
+          // if (!preds->keep[i] || preds->prob[i] < PLOT_PROB_THRESH)
           if (!preds->keep[i])
                continue;
           bbox = &preds->bbox[i * OUTPUT_BBOX_SIZE];
           fprintf(fp, "%s -1 -1 0.0 %.2f %.2f %.2f %.2f 0.0 0.0 0.0 0.0 0.0 0.0 0.0 %.3f\n",
                   CLASS_NAMES[(int)preds->klass[i]], bbox[0], bbox[1], bbox[2], bbox[3], preds->prob[i]);
      }
+}
+
+static void drawBbox(cv::Mat &frame, struct predictions *preds)
+{
+     assert(!frame.empty() && preds->bbox && preds->klass && preds->prob && preds->keep);
+     int i;
+     char *prob_s = (char *)sdt_alloc(32);
+     float *bbox;
+     for (i = 0; i < preds->num; i++) {
+          // if (!preds->keep[i] || preds->prob[i] < PLOT_PROB_THRESH)
+          if (!preds->keep[i])
+               continue;
+          bbox = &preds->bbox[i * OUTPUT_BBOX_SIZE];
+          cv::rectangle(frame, cv::Point(bbox[0], bbox[1]), cv::Point(bbox[2], bbox[3]), cv::Scalar(0, 255, 0));
+          sprintf(prob_s, "%.2f", preds->prob[i]);
+          cv::putText(frame, std::string(CLASS_NAMES[(int)preds->klass[i]]) + ": " + std::string(prob_s), cv::Point(bbox[0], bbox[1]), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0));
+     }
+     sdt_free(prob_s);
 }
 
 static size_t inputSize;
@@ -841,7 +865,16 @@ void sdt_infer_detect(unsigned char *input, int height, int width, int x_shift, 
      prepareData(data, frame);
      doInference(convContext, interpretContext, data, inputSize, img_width, img_height, x_shift, y_shift, &preds, INPUT_N);
      detectionFilter(&preds, NMS_THRESH, PROB_THRESH);
-
+     // drawBbox(frame_origin, &preds);
+     // cv::imshow("detection", frame_origin);
+     // int key = cv::waitKey(1000);
+     // if (key == ' ') {
+     //      cv::waitKey(0);
+     // } else if (key == 'q' || key == 27) { // 27 is the ASCII code of ESC
+     //      exit(1);
+     // }
+     // printf("new img\n");
+     // fprintResult(stdout, &preds);
      if (res_str)
           sprintResult(res_str, &preds);
      if (res_fp)
