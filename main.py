@@ -23,7 +23,8 @@ if __name__ == "__main__":
     ## !!!! please specify the dir here, and please put all the images for test in the folder "images".
     ## Important! You can specify the folder in your local test. But for the sumission, DAC folder is fixed as follows
     #DAC = '/home/DACSDC_GPU/valiImg' ## uncomment this line when submitting your code
-    DAC = 'Validation-100'
+    # DAC = 'Validation-100'
+    DAC = 'data/py_test'
     [imgDir, resultDir, timeDir, xmlDir, myXmlDir, allTimeFile] = procfunc.setupDir(DAC, teamName)
 
     ############### processing for object detection and tracking ###########################################################

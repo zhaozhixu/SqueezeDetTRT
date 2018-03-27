@@ -29,12 +29,12 @@
 
 static const int INPUT_N = 1;   // one image at a time
 static const int INPUT_C = 3;
-static const int INPUT_H = 384;
-static const int INPUT_W = 1248;
+static const int INPUT_H = 368;
+static const int INPUT_W = 640;
 
 static const int CONVOUT_C = 108;
-static const int CONVOUT_H = 24;
-static const int CONVOUT_W = 78;
+static const int CONVOUT_H = 23;
+static const int CONVOUT_W = 40;
 
 static const int CLASS_SLICE_C = 63;
 static const int CONF_SLICE_C = 9;
@@ -263,22 +263,28 @@ createConvEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
      auto data = network->addInput(INPUT_NAME, dt, DimsCHW{INPUT_C, INPUT_H, INPUT_W});
      assert(data != nullptr);
 
-     std::map<std::string, Weights> weightMap = loadWeights(locateFile("sqdtrt_dji.wts"));
+     std::map<std::string, Weights> weightMap = loadWeights(locateFile("sqdtrt_small.wts"));
      auto conv1 = network->addConvolution(*data, 64, DimsHW{3, 3},
                                           weightMap["conv1_kernels"],
                                           weightMap["conv1_bias"]);
      assert(conv1 != nullptr);
-     conv1->setStride(DimsHW{2, 2});
+     // conv1->setStride(DimsHW{2, 2});
+     conv1->setStride(DimsHW{1, 1});
      conv1->setPadding(DimsHW{1, 1}); // all kernels of size 3x3 need to set padding 1x1
      auto relu1 = network->addActivation(*conv1->getOutput(0), ActivationType::kRELU);
      assert(relu1 != nullptr);
 
-     auto pool1 = network->addPooling(*relu1->getOutput(0), PoolingType::kMAX, DimsHW{3, 3});
-     assert(pool1 != nullptr);
-     pool1->setStride(DimsHW{2, 2});
-     pool1->setPadding(DimsHW{1, 1});
+     auto pool1_1 = network->addPooling(*relu1->getOutput(0), PoolingType::kMAX, DimsHW{3, 3});
+     assert(pool1_1 != nullptr);
+     pool1_1->setStride(DimsHW{2, 2});
+     pool1_1->setPadding(DimsHW{1, 1});
 
-     auto fire2 = addFireLayer(network, *pool1->getOutput(0), 16, 64, 64,
+     auto pool1_2 = network->addPooling(*pool1_1->getOutput(0), PoolingType::kMAX, DimsHW{3, 3});
+     assert(pool1_2 != nullptr);
+     pool1_2->setStride(DimsHW{2, 2});
+     pool1_2->setPadding(DimsHW{1, 1});
+
+     auto fire2 = addFireLayer(network, *pool1_2->getOutput(0), 16, 64, 64,
                                weightMap["fire2_squeeze1x1_kernels"],
                                weightMap["fire2_expand1x1_kernels"],
                                weightMap["fire2_expand3x3_kernels"],
@@ -598,9 +604,11 @@ static void doInference(IExecutionContext *convContext, IExecutionContext *inter
      // filter top-n-detection
      CHECK(cudaEventRecord(start_misc, 0));
      CHECK(cudaMemcpy(orderDeviceTmp, orderDevice, anchorsNum * sizeof(int), cudaMemcpyDeviceToDevice));
-     tensorIndexSort(mulResTensor, orderDeviceTmp);
+     // tensorIndexSort(mulResTensor, orderDeviceTmp);
+     tensorIndexSort(confTransTensor, orderDeviceTmp);
      // already sort mulResTensor (sharing data with finalProbsTensor), so we can skip this
      // pickElements(mulResTensor->data, finalProbsTensor->data, 1, orderDeviceTmp, TOP_N_DETECTION);
+     pickElements(mulResTensor->data, finalProbsTensor->data, 1, orderDeviceTmp, TOP_N_DETECTION);
      pickElements(reduceArgResTensor->data, finalClassTensor->data, 1, orderDeviceTmp, TOP_N_DETECTION);
      pickElements(bboxResTensor->data, finalBboxTensor->data, OUTPUT_BBOX_SIZE, orderDeviceTmp, TOP_N_DETECTION);
 
@@ -738,21 +746,21 @@ static void detectionFilter(struct predictions *preds, float nms_thresh, float p
      // keep[0] = 1;
      for (i = 0; i < num; i++)
           keep[i] = 1;
-     // keep[0] = 1;
-     for (i = 0; i < num; i++) {
-          // keep[i] = 1;
-          // if (probs[i] < prob_thresh) {
-          //      keep[i] = 0;
-          //      continue;
-          // }
-          // for (j = i - 1; j >= 0 ; j--) {
-          for (j = i + 1; j < num; j++) {
-               if (!keep[j] || klass[i] != klass[j])
-                    continue;
-               if (computeIou(&bbox[i*OUTPUT_BBOX_SIZE],&bbox[j*OUTPUT_BBOX_SIZE]) > nms_thresh)
-                         keep[j] = 0;
-          }
-     }
+     keep[0] = 1;
+     // for (i = 0; i < num; i++) {
+     //      // keep[i] = 1;
+     //      // if (probs[i] < prob_thresh) {
+     //      //      keep[i] = 0;
+     //      //      continue;
+     //      // }
+     //      // for (j = i - 1; j >= 0 ; j--) {
+     //      for (j = i + 1; j < num; j++) {
+     //           if (!keep[j] || klass[i] != klass[j])
+     //                continue;
+     //           if (computeIou(&bbox[i*OUTPUT_BBOX_SIZE],&bbox[j*OUTPUT_BBOX_SIZE]) > nms_thresh)
+     //                     keep[j] = 0;
+     //      }
+     // }
      CHECK(cudaEventRecord(stop_misc, 0));
      CHECK(cudaEventSynchronize(stop_misc));
      CHECK(cudaEventElapsedTime(&timeMisc, start_misc, stop_misc));
