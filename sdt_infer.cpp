@@ -598,9 +598,10 @@ static void doInference(IExecutionContext *convContext, IExecutionContext *inter
      // filter top-n-detection
      CHECK(cudaEventRecord(start_misc, 0));
      CHECK(cudaMemcpy(orderDeviceTmp, orderDevice, anchorsNum * sizeof(int), cudaMemcpyDeviceToDevice));
-     tensorIndexSort(mulResTensor, orderDeviceTmp);
+     // tensorIndexSort(mulResTensor, orderDeviceTmp);
+     tensorIndexSort(confTransTensor, orderDeviceTmp);
      // already sort mulResTensor (sharing data with finalProbsTensor), so we can skip this
-     // pickElements(mulResTensor->data, finalProbsTensor->data, 1, orderDeviceTmp, TOP_N_DETECTION);
+     pickElements(mulResTensor->data, finalProbsTensor->data, 1, orderDeviceTmp, TOP_N_DETECTION);
      pickElements(reduceArgResTensor->data, finalClassTensor->data, 1, orderDeviceTmp, TOP_N_DETECTION);
      pickElements(bboxResTensor->data, finalBboxTensor->data, OUTPUT_BBOX_SIZE, orderDeviceTmp, TOP_N_DETECTION);
 
@@ -733,26 +734,26 @@ static void detectionFilter(struct predictions *preds, float nms_thresh, float p
      int *keep = preds->keep;
      float *klass = preds->klass;
      float *bbox = preds->bbox;
-     // for (i = 0; i < num; i++)
-     //      keep[i] = 0;
-     // keep[0] = 1;
      for (i = 0; i < num; i++)
-          keep[i] = 1;
-     // keep[0] = 1;
-     for (i = 0; i < num; i++) {
-          // keep[i] = 1;
-          // if (probs[i] < prob_thresh) {
-          //      keep[i] = 0;
-          //      continue;
-          // }
-          // for (j = i - 1; j >= 0 ; j--) {
-          for (j = i + 1; j < num; j++) {
-               if (!keep[j] || klass[i] != klass[j])
-                    continue;
-               if (computeIou(&bbox[i*OUTPUT_BBOX_SIZE],&bbox[j*OUTPUT_BBOX_SIZE]) > nms_thresh)
-                         keep[j] = 0;
-          }
-     }
+          keep[i] = 0;
+     keep[0] = 1;
+     // for (i = 0; i < num; i++)
+     //      keep[i] = 1;
+     // // keep[0] = 1;
+     // for (i = 0; i < num; i++) {
+     //      // keep[i] = 1;
+     //      // if (probs[i] < prob_thresh) {
+     //      //      keep[i] = 0;
+     //      //      continue;
+     //      // }
+     //      // for (j = i - 1; j >= 0 ; j--) {
+     //      for (j = i + 1; j < num; j++) {
+     //           if (!keep[j] || klass[i] != klass[j])
+     //                continue;
+     //           if (computeIou(&bbox[i*OUTPUT_BBOX_SIZE],&bbox[j*OUTPUT_BBOX_SIZE]) > nms_thresh)
+     //                     keep[j] = 0;
+     //      }
+     // }
      CHECK(cudaEventRecord(stop_misc, 0));
      CHECK(cudaEventSynchronize(stop_misc));
      CHECK(cudaEventElapsedTime(&timeMisc, start_misc, stop_misc));

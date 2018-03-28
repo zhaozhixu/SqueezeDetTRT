@@ -23,15 +23,18 @@ if __name__ == "__main__":
     ## !!!! please specify the dir here, and please put all the images for test in the folder "images".
     ## Important! You can specify the folder in your local test. But for the sumission, DAC folder is fixed as follows
     #DAC = '/home/DACSDC_GPU/valiImg' ## uncomment this line when submitting your code
-    DAC = 'Validation-100'
+    # DAC = 'Validation-100'
+    DAC = 'data/py_test'
     [imgDir, resultDir, timeDir, xmlDir, myXmlDir, allTimeFile] = procfunc.setupDir(DAC, teamName)
 
     ############### processing for object detection and tracking ###########################################################
     ### load all the images names
     [allImageName, imageNum] = procfunc.getImageNames(imgDir)
     ### process all the images in batch
-    batchNumDiskToDram = 5 ## the # of images read from disk to DRAM in one time
-    batchNumDramToGPU  = 3 ## the # of images read from DRAM to GPU in one time for batch processing on the GPU
+    # batchNumDiskToDram = 5 ## the # of images read from disk to DRAM in one time
+    # batchNumDramToGPU  = 3 ## the # of images read from DRAM to GPU in one time for batch processing on the GPU
+    batchNumDiskToDram = 1 ## the # of images read from disk to DRAM in one time
+    batchNumDramToGPU  = 1 ## the # of images read from DRAM to GPU in one time for batch processing on the GPU
     imageReadTime = math.ceil(imageNum/batchNumDiskToDram)
     imageProcTimeEachRead = math.ceil(batchNumDiskToDram/batchNumDramToGPU)
     resultRectangle = np.zeros((imageNum, 4)) ## store all the results about tracking accuracy
