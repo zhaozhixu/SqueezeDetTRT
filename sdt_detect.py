@@ -24,6 +24,7 @@ def detect_detect(data, height, width, x_shift, y_shift):
     global init_flag, libsqdtrt
     if not init_flag:
         detect_init()
+    # print ("hello")
     # res_str = create_string_buffer('\000' * 6400)
     res_str = create_string_buffer(6400)
     libsqdtrt.sdt_detect(data, height, width, x_shift, y_shift, res_str, None, None)

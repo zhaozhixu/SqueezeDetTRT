@@ -741,12 +741,12 @@ static void detectionFilter(struct predictions *preds, float nms_thresh, float p
      int *keep = preds->keep;
      float *klass = preds->klass;
      float *bbox = preds->bbox;
-     // for (i = 0; i < num; i++)
-     //      keep[i] = 0;
-     // keep[0] = 1;
      for (i = 0; i < num; i++)
-          keep[i] = 1;
+          keep[i] = 0;
      keep[0] = 1;
+     // for (i = 0; i < num; i++)
+     //      keep[i] = 1;
+     // keep[0] = 1;
      // for (i = 0; i < num; i++) {
      //      // keep[i] = 1;
      //      // if (probs[i] < prob_thresh) {
@@ -772,6 +772,7 @@ static void sprintResult(char *buf, struct predictions *preds)
 
      int i;
      float *bbox;
+     buf[0] = '\0';
      for (i = 0; i < preds->num; i++) {
           // if (!preds->keep[i] || preds->prob[i] < PLOT_PROB_THRESH)
           if (!preds->keep[i])
@@ -780,6 +781,7 @@ static void sprintResult(char *buf, struct predictions *preds)
           sprintf(buf+strlen(buf), "%s -1 -1 0.0 %.2f %.2f %.2f %.2f 0.0 0.0 0.0 0.0 0.0 0.0 0.0 %.3f\n",
                   CLASS_NAMES[(int)preds->klass[i]], bbox[0], bbox[1], bbox[2], bbox[3], preds->prob[i]);
      }
+     // printf("%s", buf);
 }
 
 static void fprintResult(FILE *fp, struct predictions *preds)
@@ -890,6 +892,8 @@ void sdt_infer_detect(unsigned char *input, int height, int width, int x_shift, 
      if (res_preds)
           *res_preds = &preds;
 
+     // char buf[1024];
+     // sprintResult(buf, &preds);
      sdt_free(input_copy);
      frame_origin.release();
      frame.release();

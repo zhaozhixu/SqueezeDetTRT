@@ -112,21 +112,29 @@ def detectionAndTracking(inputImageData, batchNum):
         # if key == " ":
         #     cv2.waitKey(0)
 
-        res = detect_detect(data.ctypes.data_as(c_void_p), data.shape[0], data.shape[1], -30, -25)
+        res = detect_detect(data.ctypes.data_as(c_void_p), data.shape[0], data.shape[1], -25, -20)
         if len(res) == 0:
             result[i, 0] = -1
             result[i, 1] = -1
             result[i, 2] = -1
             result[i, 3] = -1
             continue
-        x_min = res[0][1]
-        y_min = res[0][2]
-        x_max = res[0][3]
-        y_max = res[0][4]
-        result[i, 0] = x_min
-        result[i, 1] = x_max
-        result[i, 2] = y_min
-        result[i, 3] = y_max
+        xmin = res[0][1]
+        ymin = res[0][2]
+        xmax = res[0][3]
+        ymax = res[0][4]
+        result[i, 0] = xmin
+        result[i, 1] = xmax
+        result[i, 2] = ymin
+        result[i, 3] = ymax
+
+        # cv2.rectangle(inputImageData[i], (int(np.round(float(xmin))), int(np.round(float(ymin)))), (int(np.round(float(xmax))), int(np.round(float(ymax)))), (0, 255, 0))
+        # cv2.imshow("detection", inputImageData[i])
+        # key = cv2.waitKey(5)
+        # if key == 32:           # space
+        #     cv2.waitKey(0)
+        # elif key == 113:        # q
+        #     exit()
 
     return result
 

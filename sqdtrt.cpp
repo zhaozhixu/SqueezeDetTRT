@@ -112,6 +112,7 @@ static void fprintResult(FILE *fp, struct predictions *preds)
 static const struct option longopts[] = {
      {"eval-list", 1, NULL, 'e'},
      {"video", 1, NULL, 'v'},
+     {"ground-truth", 1, NULL, 'g'},
      {"bbox-dir", 1, NULL, 'b'},
      {"x-shift", 1, NULL, 'x'},
      {"y-shift", 1, NULL, 'y'},
@@ -130,6 +131,7 @@ Options:\n\
        -v, --video=VIDEO_FILE                  Detect a video file and play detected video\n\
                                                in a new window. IMAGE_DIR and RESULT_DIR\n\
                                                are not needed.\n\
+       -g, --ground-truth=GROUND_TRUTH_DIR     Draw ground truth in red in the video.\n\
        -b, --bbox-dir=BBOX_DIR                 Draw bounding boxes in images or video and\n\
                                                save them in BBOX_DIR.\n\
        -x, --x-shift=X_SHIFT                   Shift all bboxes downward X_SHIFT pixels.\n\
@@ -145,7 +147,8 @@ static void print_usage_and_exit()
 int main(int argc, char *argv[])
 {
      int opt, optindex;
-     char *img_dir = NULL, *result_dir = NULL, *eval_list = NULL, *video = NULL, *bbox_dir = NULL;
+     char *img_dir = NULL, *result_dir = NULL, *eval_list = NULL,
+          *gt_dir = NULL, *video = NULL, *bbox_dir = NULL;
      int x_shift = 0, y_shift = 0;
      while ((opt = getopt_long(argc, argv, ":e:v:b:x:y:h", longopts, &optindex)) != -1) {
           switch (opt) {
@@ -154,6 +157,9 @@ int main(int argc, char *argv[])
                break;
           case 'v':
                video = optarg;
+               break;
+          case 'g':
+               gt_dir = optarg;
                break;
           case 'b':
                bbox_dir = optarg;

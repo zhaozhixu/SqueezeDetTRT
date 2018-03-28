@@ -5,21 +5,23 @@ use warnings;
 use File::Spec::Functions;
 
 my $usage = <<EOF;
-Usage: $0 XML_DIR LABEL_DIR
-Compute the iou of bounding boxes in XML_DIR and LABEL_DIR.
+Usage: $0 XML_DIR LABEL_DIR [IOU_FILE]
+Compute the iou of bounding boxes in XML_DIR and LABEL_DIR,
+and store the results to IOU_FILE if it is provided.
 EOF
-if (@ARGV < 2) {
+if (@ARGV < 2 or @ARGV > 3) {
   print $usage;
   exit;
 }
 
 my $xml_dir = $ARGV[0];
 my $label_dir = $ARGV[1];
+my $iou_file = $ARGV[2] if @ARGV == 3;
 my @xml_files = glob "$xml_dir/*.xml";
 my $xml_num = @xml_files;
 my $count = 0;
 my $bar_width = 70;
-my @ious;
+my @ious = ([], []);
 
 opendir XML_DIR, $xml_dir or die "Cannot open $xml_dir: $!";
 foreach (readdir XML_DIR) {
@@ -47,7 +49,8 @@ foreach (readdir XML_DIR) {
   my $area_union = &area($xmin, $ymin, $xmax, $ymax) +
     &area($xmin_gt, $ymin_gt, $xmax_gt, $ymax_gt) - $area_inter;
   my $iou = $area_inter / $area_union;
-  push @ious, $iou;
+  push @{$ious[0]}, $iou;
+  push @{$ious[1]}, $_;
 
   my $bar_count = ++$count / $xml_num * $bar_width;
   $| = 1;
@@ -65,10 +68,19 @@ foreach (readdir XML_DIR) {
 print "\n";
 closedir XML_DIR;
 
-my $mean_iou = &sum(@ious) / @ious;
-my $n_iou = @ious;
+my $mean_iou = &sum(@{$ious[0]}) / @{$ious[0]};
+my $n_iou = @{$ious[0]};
 print "Total $n_iou records\n";
 print "Mean IoU: $mean_iou\n";
+
+if (defined $iou_file) {
+  open IOU_FILE, '>', $iou_file or die "Cannot open $iou_file: $!";
+  my @order = sort {$ious[0][$a] <=> $ious[0][$b]} 0..$#{$ious[0]};
+  foreach (@order) {
+    print IOU_FILE "${ious[1][$_]}: ${ious[0][$_]}\n"
+  }
+  close IOU_FILE;
+}
 
 sub area {
   my ($xmin, $ymin, $xmax, $ymax) = @_;

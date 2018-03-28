@@ -110,8 +110,8 @@ __global__ void transformBboxSQDKernel(float *delta, float *anchor, float *res, 
 
      /* int batch_idx = di / anchor_num; */
      /* now only support batch_size = 1 */
-     float x_scale = 1.0 * width / img_width;
-     float y_scale = 1.0 * height / img_height;
+     float x_scale = 1.0 * img_width / width;
+     float y_scale = 1.0 * img_height / height;
 
      /* (not used) si is the index of the first elements to be computed in the thread, then
         si = 4 * anchor_num * batch_idx + (di - anchor_num * batch_idx),
@@ -124,10 +124,10 @@ __global__ void transformBboxSQDKernel(float *delta, float *anchor, float *res, 
      /* compute and put 4 result elements to res, according to SqueezeDet's source code */
 
      /* TODO: don't know why (maybe the resize), always has some shift compared to groundtruth*/
-     float cx = (a[0] + d[0] * a[2]) / x_scale + x_shift;
-     float cy = (a[1] + d[1] * a[3]) / y_scale + y_shift;
-     float w = (a[2] * (d[2] < 1 ? expf(d[2]) : d[2] * E)) / x_scale;
-     float h = (a[3] * (d[3] < 1 ? expf(d[3]) : d[3] * E)) / y_scale;
+     float cx = (a[0] + d[0] * a[2]) * x_scale + x_shift;
+     float cy = (a[1] + d[1] * a[3]) * y_scale + y_shift;
+     float w = (a[2] * (d[2] < 1 ? expf(d[2]) : d[2] * E)) * x_scale;
+     float h = (a[3] * (d[3] < 1 ? expf(d[3]) : d[3] * E)) * y_scale;
      res[si] = min(max(cx - w * 0.5, 0), img_width - 1);
      res[si+1] = min(max(cy - h * 0.5, 0), img_height - 1);
      res[si+2] = max(min(cx + w * 0.5, img_width - 1), 0);
