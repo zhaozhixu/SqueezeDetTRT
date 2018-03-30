@@ -33,14 +33,17 @@ static const int INPUT_H = 384;
 static const int INPUT_W = 1248;
 
 static const int CONVOUT_C = 108;
+// static const int CONVOUT_C = 135;
 static const int CONVOUT_H = 24;
 static const int CONVOUT_W = 78;
 
 static const int CLASS_SLICE_C = 63;
+// static const int CLASS_SLICE_C = 90;
 static const int CONF_SLICE_C = 9;
 static const int BBOX_SLICE_C = 36;
 
 static const int OUTPUT_CLS_SIZE = 7;
+// static const int OUTPUT_CLS_SIZE = 10;
 static const int OUTPUT_BBOX_SIZE = 4;
 
 static const int TOP_N_DETECTION = 64;
@@ -67,6 +70,7 @@ static const float ANCHOR_SHAPE[] = {36, 37, 366, 174, 115, 59, /* w x h, 2 elem
 
 // static const char *CLASS_NAMES[] = {"car", "pedestrian", "cyclist"};
 static const char *CLASS_NAMES[] = {"car", "person", "riding", "bike_riding", "boat", "truck", "horse_riding"};
+// static const char *CLASS_NAMES[] = {"person", "car", "riding", "boat", "drone", "truck", "parachute", "whale", "building", "horse_riding"};
 
 // pixel mean used by the SqueezeDet's author
 static const float PIXEL_MEAN[3]{ 103.939f, 116.779f, 123.68f }; // in BGR order
@@ -730,10 +734,12 @@ static void detectionFilter(struct predictions *preds, float nms_thresh, float p
 {
      assert(preds->bbox && preds->klass && preds->prob && preds->keep);
 
-     int i, j, num = preds->num;
+     int i;
+     // int j;
+     int num = preds->num;
      int *keep = preds->keep;
-     float *klass = preds->klass;
-     float *bbox = preds->bbox;
+     // float *klass = preds->klass;
+     // float *bbox = preds->bbox;
      for (i = 0; i < num; i++)
           keep[i] = 0;
      keep[0] = 1;
@@ -791,23 +797,23 @@ static void fprintResult(FILE *fp, struct predictions *preds)
      }
 }
 
-static void drawBbox(cv::Mat &frame, struct predictions *preds)
-{
-     assert(!frame.empty() && preds->bbox && preds->klass && preds->prob && preds->keep);
-     int i;
-     char *prob_s = (char *)sdt_alloc(32);
-     float *bbox;
-     for (i = 0; i < preds->num; i++) {
-          // if (!preds->keep[i] || preds->prob[i] < PLOT_PROB_THRESH)
-          if (!preds->keep[i])
-               continue;
-          bbox = &preds->bbox[i * OUTPUT_BBOX_SIZE];
-          cv::rectangle(frame, cv::Point(bbox[0], bbox[1]), cv::Point(bbox[2], bbox[3]), cv::Scalar(0, 255, 0));
-          sprintf(prob_s, "%.2f", preds->prob[i]);
-          cv::putText(frame, std::string(CLASS_NAMES[(int)preds->klass[i]]) + ": " + std::string(prob_s), cv::Point(bbox[0], bbox[1]), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0));
-     }
-     sdt_free(prob_s);
-}
+// static void drawBbox(cv::Mat &frame, struct predictions *preds)
+// {
+//      assert(!frame.empty() && preds->bbox && preds->klass && preds->prob && preds->keep);
+//      int i;
+//      char *prob_s = (char *)sdt_alloc(32);
+//      float *bbox;
+//      for (i = 0; i < preds->num; i++) {
+//           // if (!preds->keep[i] || preds->prob[i] < PLOT_PROB_THRESH)
+//           if (!preds->keep[i])
+//                continue;
+//           bbox = &preds->bbox[i * OUTPUT_BBOX_SIZE];
+//           cv::rectangle(frame, cv::Point(bbox[0], bbox[1]), cv::Point(bbox[2], bbox[3]), cv::Scalar(0, 255, 0));
+//           sprintf(prob_s, "%.2f", preds->prob[i]);
+//           cv::putText(frame, std::string(CLASS_NAMES[(int)preds->klass[i]]) + ": " + std::string(prob_s), cv::Point(bbox[0], bbox[1]), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0));
+//      }
+//      sdt_free(prob_s);
+// }
 
 static size_t inputSize;
 static float *data;
