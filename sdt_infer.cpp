@@ -870,6 +870,8 @@ void sdt_infer_detect(unsigned char *input, int height, int width, int x_shift, 
      frame = cv::Mat(INPUT_H, INPUT_W, CV_8UC(3));
      preprocessFrame(frame, frame_origin, INPUT_W, INPUT_H, &img_width, &img_height);
      prepareData(data, frame);
+     // img_width = 640;
+     // img_height = 360;
      doInference(convContext, interpretContext, data, inputSize, img_width, img_height, x_shift, y_shift, &preds, INPUT_N);
      detectionFilter(&preds, NMS_THRESH, PROB_THRESH);
      // drawBbox(frame_origin, &preds);
