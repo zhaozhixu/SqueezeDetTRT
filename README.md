@@ -7,7 +7,7 @@ You can find the original squeezeDet implementation, using Tensorflow, [here](ht
 ## Prerequisites
 This requires Ubuntu 16 (Xenial Xeres) or later to get the proper libraries work. It should work for other distributions, but I haven't tested them yet. From a terminal, execute the following:
 ```
-sudo apt-get -y make gcc g++ python perl
+sudo apt-get install build-essential python perl
 ```
 You also have to install OpenCV 3.3 or higher according to its website [here](https://docs.opencv.org/3.3.1/d7/d9f/tutorial_linux_install.html).
 
@@ -18,7 +18,25 @@ and [TensorRT](https://developer.nvidia.com/rdp/form/tensorrt-download-survey). 
 Use `make` from a terminal in this folder to compile executable binary.
 
 ## Usage
-After compilation, use `./sqdtrt -h` to learn the usage for this program.
+After compilation, use `./sqdtrt -h` to learn the usage for this program, as follows.
+```
+Usage: sqdtrt [options] IMAGE_DIR RESULT_DIR
+Apply SqueezeDet detection algorithm to images in IMAGE_DIR.
+Print detection results to one text file per image in RESULT_DIR using KITTI dataset format.
+
+Options:
+       -e, --eval-list=EVAL_LIST_FILE          Provide an evaluation list file which contains
+                                               the image names (without extension names)
+                                               in IMAGE_DIR to be evaluated.
+       -v, --video=VIDEO_FILE                  Detect a video file and play detected video
+                                               in a new window. IMAGE_DIR and RESULT_DIR
+                                               are not needed.
+       -b, --bbox-dir=BBOX_DIR                 Draw bounding boxes in images or video and
+                                               save them in BBOX_DIR.
+       -x, --x-shift=X_SHIFT                   Shift all bboxes downward X_SHIFT pixels.
+       -y, --y-shift=Y_SHIFT                   Shift all bboxes rightward Y_SHIFT pixels.
+       -h, --help                              Print this help and exit.
+```
 
 ## Demo
 There are two demoes for image and video detections below. The image and video for demoes are located in `data/example`.
