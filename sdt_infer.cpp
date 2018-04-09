@@ -32,15 +32,18 @@ static const int INPUT_C = 3;
 static const int INPUT_H = 368;
 static const int INPUT_W = 640;
 
-static const int CONVOUT_C = 108;
+// static const int CONVOUT_C = 108;
+static const int CONVOUT_C = 144;
 static const int CONVOUT_H = 23;
 static const int CONVOUT_W = 40;
 
-static const int CLASS_SLICE_C = 63;
+// static const int CLASS_SLICE_C = 63;
+static const int CLASS_SLICE_C = 99;
 static const int CONF_SLICE_C = 9;
 static const int BBOX_SLICE_C = 36;
 
-static const int OUTPUT_CLS_SIZE = 7;
+// static const int OUTPUT_CLS_SIZE = 7;
+static const int OUTPUT_CLS_SIZE = 11;
 static const int OUTPUT_BBOX_SIZE = 4;
 
 static const int TOP_N_DETECTION = 64;
@@ -61,12 +64,16 @@ static const char* CONF_OUTPUT_NAME = "pred_confidence_score";
 
 static const int ANCHORS_PER_GRID = 9;
 static const int ANCHOR_SIZE = 4;
-static const float ANCHOR_SHAPE[] = {36, 37, 366, 174, 115, 59, /* w x h, 2 elements one group*/
-                              162, 87, 38, 90, 258, 173,
-                              224, 108, 78, 170, 72, 43};
+// static const float ANCHOR_SHAPE[] = {36, 37, 366, 174, 115, 59,
+//                               162, 87, 38, 90, 258, 173,
+//                               224, 108, 78, 170, 72, 43};
+static const float ANCHOR_SHAPE[] = {229, 137, 48, 71, 289, 245,
+                                     185, 134, 85, 142, 31, 41,
+                                     197, 191, 237, 206, 63, 108};
 
 // static const char *CLASS_NAMES[] = {"car", "pedestrian", "cyclist"};
-static const char *CLASS_NAMES[] = {"car", "person", "riding", "bike_riding", "boat", "truck", "horse_riding"};
+// static const char *CLASS_NAMES[] = {"car", "person", "riding", "bike_riding", "boat", "truck", "horse_riding"};
+static const char *CLASS_NAMES[] = {"person", "car", "riding", "boat", "drone", "truck", "parachute", "whale", "building", "bird", "horse_riding"};
 
 // pixel mean used by the SqueezeDet's author
 static const float PIXEL_MEAN[3]{ 103.939f, 116.779f, 123.68f }; // in BGR order

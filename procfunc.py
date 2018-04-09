@@ -112,7 +112,7 @@ def detectionAndTracking(inputImageData, batchNum):
         # if key == " ":
         #     cv2.waitKey(0)
 
-        res = detect_detect(data.ctypes.data_as(c_void_p), data.shape[0], data.shape[1], -25, -20)
+        res = detect_detect(data.ctypes.data_as(c_void_p), data.shape[0], data.shape[1], -15, -8)
         if len(res) == 0:
             result[i, 0] = -1
             result[i, 1] = -1

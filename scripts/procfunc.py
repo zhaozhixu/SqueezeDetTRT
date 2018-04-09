@@ -75,11 +75,22 @@ def readImagesBatch(imgDir, allImageName, imageNum, iter, batchNumDiskToDram):
     end = start + batchNumDiskToDram
     if end > imageNum:
         end = imageNum
-    batchImageData = np.zeros((end-start, imageSize[0], imageSize[1], imageSize[2]))
+    # batchImageData = np.zeros((end-start, imageSize[0], imageSize[1], imageSize[2]))
+    batchImageData = []
     for i in range(start, end):
         imgName = imgDir + '/' + allImageName[i]
         img = cv2.imread(imgName, 1)
-        batchImageData[i-start,:,:] = img[:,:]
+        # batchImageData[i-start,:,:] = img[:,:]
+        # batchImageData[i-start] = img
+        batchImageData.append(img)
+        # print batchImageData[i-start]==img
+        # exit(1)
+        # cv2.imshow("origin", img[:,:])
+        # cv2.imshow("origin", batchImageData[i-start])
+        # key = cv2.waitKey(200)
+        # if key == " ":
+        #     cv2.waitKey(0)
+
     return batchImageData
 
 def det_init():
@@ -87,22 +98,45 @@ def det_init():
 
 def det_cleanup():
     detect_cleanup()
-    
+
 ## detection and tracking algorithm
-def detectionAndTracking(inputImageData, batchNum):
-    # result = np.random.randn(batchNum, 4)
+def detectionAndTracking(inputImageData, batchNum, xshift, yshift):
+    # print inputImageData.shape
+    # exit(1)
     result = np.zeros([batchNum, 4])
     for i in range(batchNum):
         data = inputImageData[i]
-        res = detect_detect(data.ctypes.data_as(c_void_p), data.shape[0], data.shape[1], -20, -20)
-        x_min = res[0][1]
-        y_min = res[0][2]
-        x_max = res[0][3]
-        y_max = res[0][4]
-        result[i, 0] = x_min
-        result[i, 1] = x_max
-        result[i, 2] = y_min
-        result[i, 3] = y_max
+        # print data.shape
+        # cv2.imshow("origin", data)
+        # key = cv2.waitKey(20)
+        # if key == " ":
+        #     cv2.waitKey(0)
+
+        # print (xshift)
+        # print (yshift)
+        res = detect_detect(data.ctypes.data_as(c_void_p), data.shape[0], data.shape[1], xshift, yshift)
+        if len(res) == 0:
+            result[i, 0] = -1
+            result[i, 1] = -1
+            result[i, 2] = -1
+            result[i, 3] = -1
+            continue
+        xmin = res[0][1]
+        ymin = res[0][2]
+        xmax = res[0][3]
+        ymax = res[0][4]
+        result[i, 0] = xmin
+        result[i, 1] = xmax
+        result[i, 2] = ymin
+        result[i, 3] = ymax
+
+        # cv2.rectangle(inputImageData[i], (int(np.round(float(xmin))), int(np.round(float(ymin)))), (int(np.round(float(xmax))), int(np.round(float(ymax)))), (0, 255, 0))
+        # cv2.imshow("detection", inputImageData[i])
+        # key = cv2.waitKey(5)
+        # if key == 32:           # space
+        #     cv2.waitKey(0)
+        # elif key == 113:        # q
+        #     exit()
 
     return result
 
@@ -158,6 +192,6 @@ def storeResultsToXML(resultRectangle, allImageName, myXmlDir):
 def write(imageNum,runTime,teamName, allTimeFile):
     FPS = imageNum / runTime
     ftime = open(allTimeFile, 'a+')
-    ftime.write( "\n" + teamName + " Frames per second:" + str((FPS)) + '\n')
+    ftime.write( "\n" + teamName + " Frames per second:" + str((FPS)) + ", imgNum: "+ str(imageNum) + ", runtime: " + str(runTime) + '\n')  ## xiaowei xu
     ftime.close()
     return

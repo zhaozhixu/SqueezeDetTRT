@@ -12,7 +12,11 @@ def detect_init():
     global init_flag, libsqdtrt
     if init_flag:
         return
-    libsqdtrt = CDLL("../libsqdtrt.so")
+    # ret = os.system("date >> make.log; make libso | tee -a make.log") >> 8
+    # if ret != 0:
+    #     print("Oops! Make failed. exit " % ret)
+    #     exit(1)
+    libsqdtrt = CDLL("libsqdtrt.so")
     libsqdtrt.sdt_init()
     init_flag = True
 
@@ -20,6 +24,7 @@ def detect_detect(data, height, width, x_shift, y_shift):
     global init_flag, libsqdtrt
     if not init_flag:
         detect_init()
+    # print ("hello")
     # res_str = create_string_buffer('\000' * 6400)
     res_str = create_string_buffer(6400)
     libsqdtrt.sdt_detect(data, height, width, x_shift, y_shift, res_str, None, None)
@@ -32,7 +37,9 @@ def detect_detect(data, height, width, x_shift, y_shift):
     lines = res_str.value.decode().split("\n")
     result = []
     i = 0
+    # print ("new img %d results" % len(lines))
     for line in lines:
+        # print line
         m = re.search(strre, line)
         if m:
             result.append([])
