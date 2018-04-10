@@ -44,9 +44,9 @@ Options:
 ```
 ### DAC比赛脚本使用
 使用`make libso`完成共享库的编译后，确保`data/py_test/images`和`data/py_test/labels`是有效的数据集和标签，然后执行
-`python main.py`即可开始执行比赛脚本。测试结果保存在`data/py_test/result`里。数据集较大时可能会花费较长时间。
+`python main.py`开始执行比赛脚本，若显存不够可能需要在前面加上`CUDA_VISIBLE_DEVICES=<GPU_ID>`来选择某个显卡。测试结果保存在`data/py_test/result`里。数据集较大时可能会花费较长时间。不要轻易修改`data/py_test/images`和`data/py_test/labels`里的内容，因为他们是链接，还有其他程序在使用。
 
-执行以下命令来
+执行以下命令
 ```
 scripts/iou.pl data/py_test/result/xml/XJTU-IAIR-Falcon data/py_test/labels scripts/iou_res.txt
 ```
