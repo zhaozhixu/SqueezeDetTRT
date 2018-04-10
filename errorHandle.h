@@ -5,6 +5,14 @@
 #include <stdlib.h>
 #include <cuda_runtime.h>
 
-void checkError(cudaError_t error);
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+	void checkError(cudaError_t error);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
