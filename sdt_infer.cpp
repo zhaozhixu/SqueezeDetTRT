@@ -157,7 +157,7 @@ std::map<std::string, Weights> loadWeights(const std::string file)
         input >> name >> std::dec >> type >> size;
         wt.type = static_cast<DataType>(type);
         if (wt.type == DataType::kFLOAT) {
-            uint32_t *val = reinterpret_cast<uint32_t*>(sdt_alloc(sizeof(val) * size)); // TODO: wrong sizeof oprand
+            uint32_t *val = reinterpret_cast<uint32_t*>(sdt_alloc(sizeof(*val) * size));
             for (uint32_t x = 0, y = size; x < y; ++x)
             {
                 input >> std::hex >> val[x];
@@ -165,7 +165,7 @@ std::map<std::string, Weights> loadWeights(const std::string file)
             }
             wt.values = val;
         } else if (wt.type == DataType::kHALF) {
-            uint16_t *val = reinterpret_cast<uint16_t*>(sdt_alloc(sizeof(val) * size)); // wrong sizeof oprand
+            uint16_t *val = reinterpret_cast<uint16_t*>(sdt_alloc(sizeof(*val) * size));
             for (uint32_t x = 0, y = size; x < y; ++x)
             {
                 input >> std::hex >> val[x];
@@ -226,7 +226,7 @@ static std::string locateFile_1(const std::string& input, const std::vector<std:
 
 static std::string locateFile(const std::string& input)
 {
-     std::vector<std::string> dirs{"data/"};
+     std::vector<std::string> dirs{"./"};
      return locateFile_1(input, dirs);
 }
 
@@ -263,14 +263,14 @@ addFireLayer(INetworkDefinition* network, ITensor &input, int ns1x1, int ne1x1, 
 
 // Creat the Engine using only the API and not any parser.
 static ICudaEngine *
-createConvEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
+createConvEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt, char *wts)
 {
      INetworkDefinition* network = builder->createNetwork();
 
      auto data = network->addInput(INPUT_NAME, dt, DimsCHW{INPUT_C, INPUT_H, INPUT_W});
      assert(data != nullptr);
 
-     std::map<std::string, Weights> weightMap = loadWeights(locateFile("sqdtrt_small.wts"));
+     std::map<std::string, Weights> weightMap = loadWeights(locateFile(std::string(wts)));
      auto conv1 = network->addConvolution(*data, 64, DimsHW{3, 3},
                                           weightMap["conv1_kernels"],
                                           weightMap["conv1_bias"]);
@@ -438,13 +438,13 @@ createInterpretEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
 }
 
 // maxBatch - NB must be at least as large as the batch we want to run with)
-static void APIToModel(unsigned int maxBatchSize, IHostMemory **convModelStream, IHostMemory **interpretModelStream)
+static void APIToModel(unsigned int maxBatchSize, IHostMemory **convModelStream, IHostMemory **interpretModelStream, char *wts)
 {
      // create the builder
      IBuilder* builder = createInferBuilder(gLogger);
 
      // create the model to populate the network, then set the outputs and create an engine
-     ICudaEngine* convEngine = createConvEngine(maxBatchSize, builder, DataType::kFLOAT);
+     ICudaEngine* convEngine = createConvEngine(maxBatchSize, builder, DataType::kFLOAT, wts);
      ICudaEngine* interpretEngine = createInterpretEngine(maxBatchSize, builder, DataType::kFLOAT);
 
      assert(convEngine != nullptr);
@@ -837,7 +837,7 @@ static ICudaEngine* interpretEngine;
 static IExecutionContext *convContext;
 static IExecutionContext *interpretContext;
 
-void sdt_infer_init()
+void sdt_infer_init(char *wts)
 {
      // maloc host memory
      inputSize = sizeof(float) * INPUT_C * INPUT_H * INPUT_W;
@@ -852,7 +852,7 @@ void sdt_infer_init()
      timeMisc = 0;
 
      // create engines
-     APIToModel(INPUT_N, &convModelStream, &interpretModelStream);
+     APIToModel(INPUT_N, &convModelStream, &interpretModelStream, wts);
 
      // deserialize engines
      runtime = createInferRuntime(gLogger);

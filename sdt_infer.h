@@ -15,7 +15,7 @@ struct predictions {
 extern "C" {
 #endif
 
-	void sdt_infer_init();
+	void sdt_infer_init(char *wts);
 	void sdt_infer_detect(unsigned char *input, int height, int width, int x_shift, int y_shift,
 			char *res_str, FILE *res_fp, struct predictions **res_preds);
 	void sdt_infer_cleanup();

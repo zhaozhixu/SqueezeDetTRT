@@ -17,7 +17,8 @@ def detect_init():
         print("Oops! Make failed. exit " % ret)
         exit(1)
     libsqdtrt = CDLL("libsqdtrt.so")
-    libsqdtrt.sdt_init()
+    wts_str = create_string_buffer("data/sqdtrt_dji_small.wts")
+    libsqdtrt.sdt_init(wts_str)
     init_flag = True
 
 def detect_detect(data, height, width, x_shift, y_shift):

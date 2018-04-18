@@ -13,8 +13,10 @@
 
 static const int OUTPUT_BBOX_SIZE = 4;
 static const float PLOT_PROB_THRESH = 0.3;
+static const char DEFAULT_WTS[] = "data/sqdtrt.wts";
 
-static const char *CLASS_NAMES[] = {"car", "person", "riding", "bike_riding", "boat", "truck", "horse_riding"};
+// static const char *CLASS_NAMES[] = {"car", "person", "riding", "bike_riding", "boat", "truck", "horse_riding"};
+static const char *CLASS_NAMES[] = {"person", "car", "riding", "boat", "drone", "truck", "parachute", "whale", "building", "bird", "horse_riding"};
 
 #define IMG_NAME_SIZE_GUESS 1024
 
@@ -114,6 +116,7 @@ static const struct option longopts[] = {
      {"video", 1, NULL, 'v'},
      {"ground-truth", 1, NULL, 'g'},
      {"bbox-dir", 1, NULL, 'b'},
+     {"weights", 1, NULL, 'w'},
      {"x-shift", 1, NULL, 'x'},
      {"y-shift", 1, NULL, 'y'},
      {"help", 0, NULL, 'h'},
@@ -131,9 +134,11 @@ Options:\n\
        -v, --video=VIDEO_FILE                  Detect a video file and play detected video\n\
                                                in a new window. IMAGE_DIR and RESULT_DIR\n\
                                                are not needed.\n\
-       -g, --ground-truth=GROUND_TRUTH_DIR     Draw ground truth in red in the video.\n\
+       -g, --ground-truth=GROUND_TRUTH_DIR     TODO: Draw ground truth in red in the video.\n\
        -b, --bbox-dir=BBOX_DIR                 Draw bounding boxes in images or video and\n\
                                                save them in BBOX_DIR.\n\
+       -w, --weights=WEIGHTS_FILE              Assign a weights file. Use `data/sqdtrt.wts`\n\
+                                               if not provided.\n\
        -x, --x-shift=X_SHIFT                   Shift all bboxes downward X_SHIFT pixels.\n\
        -y, --y-shift=Y_SHIFT                   Shift all bboxes rightward Y_SHIFT pixels.\n\
        -h, --help                              Print this help and exit.\n";
@@ -148,9 +153,12 @@ int main(int argc, char *argv[])
 {
      int opt, optindex;
      char *img_dir = NULL, *result_dir = NULL, *eval_list = NULL,
-          *gt_dir = NULL, *video = NULL, *bbox_dir = NULL;
+          *gt_dir = NULL, *video = NULL, *bbox_dir = NULL,
+          *wts = NULL;
      int x_shift = 0, y_shift = 0;
-     while ((opt = getopt_long(argc, argv, ":e:v:b:x:y:h", longopts, &optindex)) != -1) {
+     wts = (char *)sdt_alloc(strlen(DEFAULT_WTS)+1);
+     strcpy(wts, DEFAULT_WTS);
+     while ((opt = getopt_long(argc, argv, ":e:v:b:w:x:y:h", longopts, &optindex)) != -1) {
           switch (opt) {
           case 'e':
                eval_list = optarg;
@@ -163,6 +171,10 @@ int main(int argc, char *argv[])
                break;
           case 'b':
                bbox_dir = optarg;
+               break;
+          case 'w':
+               sdt_free(wts);
+               wts = optarg;
                break;
           case 'x':
                x_shift = atoi(optarg);
@@ -193,7 +205,7 @@ int main(int argc, char *argv[])
           validateDir(bbox_dir, 1);
 
      // initialize library
-     sdt_init();
+     sdt_init(wts);
 
      // read image or video, alloc path buffer
      FILE *result_fp;

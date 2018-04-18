@@ -32,8 +32,8 @@ if __name__ == "__main__":
     ### load all the images names
     [allImageName, imageNum] = procfunc.getImageNames(imgDir)
     ### process all the images in batch
-    batchNumDiskToDram = 1 ## the # of images read from disk to DRAM in one time
-    batchNumDramToGPU  = 1 ## the # of images read from DRAM to GPU in one time for batch processing on the GPU
+    batchNumDiskToDram = 6 ## the # of images read from disk to DRAM in one time
+    batchNumDramToGPU  = 3 ## the # of images read from DRAM to GPU in one time for batch processing on the GPU
     imageReadTime = math.ceil(imageNum/batchNumDiskToDram)
     imageProcTimeEachRead = math.ceil(batchNumDiskToDram/batchNumDramToGPU)
     resultRectangle = np.zeros((imageNum, 4)) ## store all the results about tracking accuracy
