@@ -263,7 +263,7 @@ addFireLayer(INetworkDefinition* network, ITensor &input, int ns1x1, int ne1x1, 
 
 // Creat the Engine using only the API and not any parser.
 static ICudaEngine *
-createConvEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt, char *wts)
+createConvEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt, const char *wts)
 {
      INetworkDefinition* network = builder->createNetwork();
 
@@ -438,7 +438,7 @@ createInterpretEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
 }
 
 // maxBatch - NB must be at least as large as the batch we want to run with)
-static void APIToModel(unsigned int maxBatchSize, IHostMemory **convModelStream, IHostMemory **interpretModelStream, char *wts)
+static void APIToModel(unsigned int maxBatchSize, IHostMemory **convModelStream, IHostMemory **interpretModelStream, const char *wts)
 {
      // create the builder
      IBuilder* builder = createInferBuilder(gLogger);
@@ -838,7 +838,7 @@ static ICudaEngine* interpretEngine;
 static IExecutionContext *convContext;
 static IExecutionContext *interpretContext;
 
-void sdt_infer_init(char *wts)
+void sdt_infer_init(const char *wts)
 {
      // maloc host memory
      inputSize = sizeof(float) * INPUT_C * INPUT_H * INPUT_W;
@@ -907,7 +907,7 @@ void sdt_infer_detect(unsigned char *input, int height, int width, int x_shift, 
      frame.release();
 }
 
-void sdt_infer_cleanup()
+void sdt_infer_cleanup(void)
 {
      // clean up device memory
      cleanUp();
@@ -928,12 +928,12 @@ void sdt_infer_cleanup()
      sdt_free(preds.keep);
 }
 
-float sdt_infer_get_time_detect()
+float sdt_infer_get_time_detect(void)
 {
      return timeDetect;
 }
 
-float sdt_infer_get_time_misc()
+float sdt_infer_get_time_misc(void)
 {
      return timeMisc;
 }
