@@ -134,7 +134,6 @@ Options:\n\
        -v, --video=VIDEO_FILE                  Detect a video file and play detected video\n\
                                                in a new window. IMAGE_DIR and RESULT_DIR\n\
                                                are not needed.\n\
-       -g, --ground-truth=GROUND_TRUTH_DIR     TODO: Draw ground truth in red in the video.\n\
        -b, --bbox-dir=BBOX_DIR                 Draw bounding boxes in images or video and\n\
                                                save them in BBOX_DIR.\n\
        -w, --weights=WEIGHTS_FILE              Assign a weights file. Use `data/sqdtrt.wts`\n\
@@ -142,6 +141,8 @@ Options:\n\
        -x, --x-shift=X_SHIFT                   Shift all bboxes downward X_SHIFT pixels.\n\
        -y, --y-shift=Y_SHIFT                   Shift all bboxes rightward Y_SHIFT pixels.\n\
        -h, --help                              Print this help and exit.\n";
+
+//  -g, --ground-truth=GROUND_TRUTH_DIR     TODO: Draw ground truth in red in the video.\n
 
 static void print_usage_and_exit()
 {
@@ -153,8 +154,8 @@ int main(int argc, char *argv[])
 {
      int opt, optindex;
      char *img_dir = NULL, *result_dir = NULL, *eval_list = NULL,
-          *gt_dir = NULL, *video = NULL, *bbox_dir = NULL,
-          *wts = NULL;
+          *video = NULL, *bbox_dir = NULL, *wts = NULL;
+          // *gt_dir = NULL,
      int x_shift = 0, y_shift = 0;
      wts = (char *)sdt_alloc(strlen(DEFAULT_WTS)+1);
      strcpy(wts, DEFAULT_WTS);
@@ -166,9 +167,9 @@ int main(int argc, char *argv[])
           case 'v':
                video = optarg;
                break;
-          case 'g':
-               gt_dir = optarg;
-               break;
+          // case 'g':
+          //      gt_dir = optarg;
+          //      break;
           case 'b':
                bbox_dir = optarg;
                break;

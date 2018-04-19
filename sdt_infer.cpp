@@ -585,28 +585,28 @@ static void doInference(IExecutionContext *convContext, IExecutionContext *inter
      CHECK(cudaEventElapsedTime(&timeDetect, start_detect, stop_detect));
 
 #ifdef DEBUG
-     saveDeviceTensor("data/convoutTensor.txt", convoutTensor, "%15.6e");
-     saveDeviceTensor("data/classInputTensor.txt", classInputTensor, "%15.6e");
-     saveDeviceTensor("data/confInputTensor.txt", confInputTensor, "%15.6e");
-     saveDeviceTensor("data/bboxInputTensor.txt", bboxInputTensor, "%15.6e");
-     saveDeviceTensor("data/classOutputTensor.txt", classOutputTensor, "%15.6e");
-     saveDeviceTensor("data/confOutputTensor.txt", confOutputTensor, "%15.6e");
-     saveDeviceTensor("data/bboxOutputTensor.txt", bboxOutputTensor, "%15.6e");
-     saveDeviceTensor("data/mulResTensor.txt", mulResTensor, "%15.6e");
-     saveDeviceTensor("data/reduceMaxResTensor.txt", reduceMaxResTensor, "%15.6e");
-     saveDeviceTensor("data/reduceArgResTensor.txt", reduceArgResTensor, "%15.6e");
-     saveDeviceTensor("data/bboxResTensor.txt", bboxResTensor, "%15.6e");
-     saveDeviceTensor("data/confTransTensor.txt", confTransTensor, "%15.6e");
-     saveDeviceTensor("data/classTransTensor.txt", classTransTensor, "%15.6e");
-     saveDeviceTensor("data/bboxTransTensor.txt", bboxTransTensor, "%15.6e");
-     saveDeviceTensor("data/anchorsDeviceTensor.txt", anchorsDeviceTensor, "%15.6e");
+     saveDeviceTensor("data/debug/convoutTensor.txt", convoutTensor, "%15.6e");
+     saveDeviceTensor("data/debug/classInputTensor.txt", classInputTensor, "%15.6e");
+     saveDeviceTensor("data/debug/confInputTensor.txt", confInputTensor, "%15.6e");
+     saveDeviceTensor("data/debug/bboxInputTensor.txt", bboxInputTensor, "%15.6e");
+     saveDeviceTensor("data/debug/classOutputTensor.txt", classOutputTensor, "%15.6e");
+     saveDeviceTensor("data/debug/confOutputTensor.txt", confOutputTensor, "%15.6e");
+     saveDeviceTensor("data/debug/bboxOutputTensor.txt", bboxOutputTensor, "%15.6e");
+     saveDeviceTensor("data/debug/mulResTensor.txt", mulResTensor, "%15.6e");
+     saveDeviceTensor("data/debug/reduceMaxResTensor.txt", reduceMaxResTensor, "%15.6e");
+     saveDeviceTensor("data/debug/reduceArgResTensor.txt", reduceArgResTensor, "%15.6e");
+     saveDeviceTensor("data/debug/bboxResTensor.txt", bboxResTensor, "%15.6e");
+     saveDeviceTensor("data/debug/confTransTensor.txt", confTransTensor, "%15.6e");
+     saveDeviceTensor("data/debug/classTransTensor.txt", classTransTensor, "%15.6e");
+     saveDeviceTensor("data/debug/bboxTransTensor.txt", bboxTransTensor, "%15.6e");
+     saveDeviceTensor("data/debug/anchorsDeviceTensor.txt", anchorsDeviceTensor, "%15.6e");
 
-     int classInputDims2[] = {batchSize, 9, 3, CONVOUT_W*CONVOUT_H};
-     int classInputDims3[] = {batchSize, 3, 9, CONVOUT_W*CONVOUT_H};
-     Tensor *classInput2 = reshapeTensor(classInputTensor, 4, classInputDims2);
-     Tensor *classInput3 = reshapeTensor(classInputTensor, 4, classInputDims3);
-     saveDeviceTensor("data/classInputDims2.txt", classInput2, "%15.6e");
-     saveDeviceTensor("data/classInputDims3.txt", classInput3, "%15.6e");
+     // int classInputDims2[] = {batchSize, 9, 3, CONVOUT_W*CONVOUT_H};
+     // int classInputDims3[] = {batchSize, 3, 9, CONVOUT_W*CONVOUT_H};
+     // Tensor *classInput2 = reshapeTensor(classInputTensor, 4, classInputDims2);
+     // Tensor *classInput3 = reshapeTensor(classInputTensor, 4, classInputDims3);
+     // saveDeviceTensor("data/debug/classInputDims2.txt", classInput2, "%15.6e");
+     // saveDeviceTensor("data/debug/classInputDims3.txt", classInput3, "%15.6e");
 #endif
      // filter top-n-detection
      CHECK(cudaEventRecord(start_misc, 0));
@@ -620,15 +620,15 @@ static void doInference(IExecutionContext *convContext, IExecutionContext *inter
      pickElements(bboxResTensor->data, finalBboxTensor->data, OUTPUT_BBOX_SIZE, orderDeviceTmp, TOP_N_DETECTION);
 
 #ifdef DEBUG
-     FILE * sort_file = fopen("data/orderDevice.txt", "w");
+     FILE * sort_file = fopen("data/debug/orderDevice.txt", "w");
      int *orderHost2 = (int *)cloneMem(orderDevice, anchorsNum * sizeof(int), D2H);
      for (int i = 0; i < anchorsNum; i++)
           fprintf(sort_file, "%d\n", orderHost2[i]);
      fclose(sort_file);
      sdt_free(orderHost2);
-     saveDeviceTensor("data/finalClassTensor.txt", finalClassTensor, "%15.6e");
-     saveDeviceTensor("data/finalProbsTensor.txt", finalProbsTensor, "%15.6e");
-     saveDeviceTensor("data/finalBboxTensor.txt", finalBboxTensor, "%15.6e");
+     saveDeviceTensor("data/debug/finalClassTensor.txt", finalClassTensor, "%15.6e");
+     saveDeviceTensor("data/debug/finalProbsTensor.txt", finalProbsTensor, "%15.6e");
+     saveDeviceTensor("data/debug/finalBboxTensor.txt", finalBboxTensor, "%15.6e");
 #endif
 
      CHECK(cudaMemcpyAsync(preds->prob, finalProbsTensor->data, finalProbsTensor->len*sizeof(float), cudaMemcpyDeviceToHost, stream));
@@ -744,10 +744,11 @@ static void detectionFilter(struct predictions *preds, float nms_thresh, float p
 {
      assert(preds->bbox && preds->klass && preds->prob && preds->keep);
 
-     int i, j, num = preds->num;
+     // int j;
+     int i, num = preds->num;
      int *keep = preds->keep;
-     float *klass = preds->klass;
-     float *bbox = preds->bbox;
+     // float *klass = preds->klass;
+     // float *bbox = preds->bbox;
      for (i = 0; i < num; i++)
           keep[i] = 0;
      keep[0] = 1;
@@ -807,23 +808,23 @@ static void fprintResult(FILE *fp, struct predictions *preds)
      }
 }
 
-static void drawBbox(cv::Mat &frame, struct predictions *preds)
-{
-     assert(!frame.empty() && preds->bbox && preds->klass && preds->prob && preds->keep);
-     int i;
-     char *prob_s = (char *)sdt_alloc(32);
-     float *bbox;
-     for (i = 0; i < preds->num; i++) {
-          // if (!preds->keep[i] || preds->prob[i] < PLOT_PROB_THRESH)
-          if (!preds->keep[i])
-               continue;
-          bbox = &preds->bbox[i * OUTPUT_BBOX_SIZE];
-          cv::rectangle(frame, cv::Point(bbox[0], bbox[1]), cv::Point(bbox[2], bbox[3]), cv::Scalar(0, 255, 0));
-          sprintf(prob_s, "%.2f", preds->prob[i]);
-          cv::putText(frame, std::string(CLASS_NAMES[(int)preds->klass[i]]) + ": " + std::string(prob_s), cv::Point(bbox[0], bbox[1]), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0));
-     }
-     sdt_free(prob_s);
-}
+// static void drawBbox(cv::Mat &frame, struct predictions *preds)
+// {
+//      assert(!frame.empty() && preds->bbox && preds->klass && preds->prob && preds->keep);
+//      int i;
+//      char *prob_s = (char *)sdt_alloc(32);
+//      float *bbox;
+//      for (i = 0; i < preds->num; i++) {
+//           // if (!preds->keep[i] || preds->prob[i] < PLOT_PROB_THRESH)
+//           if (!preds->keep[i])
+//                continue;
+//           bbox = &preds->bbox[i * OUTPUT_BBOX_SIZE];
+//           cv::rectangle(frame, cv::Point(bbox[0], bbox[1]), cv::Point(bbox[2], bbox[3]), cv::Scalar(0, 255, 0));
+//           sprintf(prob_s, "%.2f", preds->prob[i]);
+//           cv::putText(frame, std::string(CLASS_NAMES[(int)preds->klass[i]]) + ": " + std::string(prob_s), cv::Point(bbox[0], bbox[1]), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0));
+//      }
+//      sdt_free(prob_s);
+// }
 
 static size_t inputSize;
 static float *data;

@@ -131,18 +131,19 @@ def detectionAndTracking(inputImageData, batchNum):
         xmax = res[0][3]
         ymax = res[0][4]
 
-        # area_det = area(xmin, ymin, xmax, ymax)
-        # x_shift = 1.52545466e-3 * area_det + 7.96178772
-        # y_shift = -1.72937148e-3 * area_det + 2.09030376e1
-        # x_shift = 1.897e-11*area_det**3+-3.103e-7*area_det**2+1.789e-3*area_det**1+1.835e1
-        # y_shift = 9.403e-12*area_det**3+-1.405e-7*area_det**2+7.607e-4*area_det**1+1.805e1
-        x_shift = 0
-        y_shift = 0
+        if data.shape[0] == 720:
+            x_shift = 29
+            y_shift = 29
+        else:
+            x_shift = 15
+            y_shift = 15
+        # x_shift = 0
+        # y_shift = 0
 
-        result[i, 0] = xmin-x_shift
-        result[i, 1] = xmax-x_shift
-        result[i, 2] = ymin-y_shift
-        result[i, 3] = ymax-y_shift
+        result[i, 0] = xmin - x_shift
+        result[i, 1] = xmax - x_shift
+        result[i, 2] = ymin - y_shift
+        result[i, 3] = ymax - y_shift
 
         # cv2.rectangle(inputImageData[i], (int(np.round(float(xmin))), int(np.round(float(ymin)))), (int(np.round(float(xmax))), int(np.round(float(ymax)))), (0, 255, 0))
         # cv2.imshow("detection", inputImageData[i])

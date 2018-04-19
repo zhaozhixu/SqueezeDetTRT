@@ -506,6 +506,7 @@ Tensor *reshapeTensor(const Tensor *src, int newNdim, const int *newDims)
 {
      assert(isTensorValid(src));
      assert(newDims);
+     /* fprintf(stderr, "len = %d, compute = %d\n", src->len, computeLength(newNdim, newDims)); */
      assert(src->len == computeLength(newNdim, newDims));
      Tensor *dst = createTensor(src->data, newNdim, newDims); /* new tensor */
      return dst;
