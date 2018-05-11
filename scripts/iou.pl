@@ -45,7 +45,8 @@ foreach (readdir XML_DIR) {
   my $label_str = join "", <LABEL>;
   my ($xmin_gt, $ymin_gt, $xmax_gt, $ymax_gt) = (split ' ', $label_str)[4, 5, 6, 7];
   close LABEL;
-  my $shape_str = (split ' ', `identify $img`)[2];
+  my $shape_str = (split ' ', `identify '$img'`)[2];
+  # print $img;
 
   my $area_det = &area($xmin, $ymin, $xmax, $ymax);
   my $area_gt = &area($xmin_gt, $ymin_gt, $xmax_gt, $ymax_gt);

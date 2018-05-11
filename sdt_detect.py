@@ -17,7 +17,7 @@ def detect_init():
         print("Oops! Make failed. exit " % ret)
         exit(1)
     libsqdtrt = CDLL("libsqdtrt.so")
-    wts_str = create_string_buffer("data/sqdtrt_dji_small.wts")
+    wts_str = create_string_buffer("data/sqdtrt_small_concat_v4.wts")
     libsqdtrt.sdt_init(wts_str)
     init_flag = True
 
