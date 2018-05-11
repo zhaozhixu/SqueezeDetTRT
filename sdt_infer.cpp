@@ -36,6 +36,8 @@ static const int INPUT_W = 640;
 static const int CONVOUT_C = 144;
 static const int CONVOUT_H = 23;
 static const int CONVOUT_W = 40;
+static const int CONSTS_C = 384; // for concatation
+static const float CONSTS_VALUE = 0.1; // for concatation
 
 // static const int CLASS_SLICE_C = 63;
 static const int CLASS_SLICE_C = 99;
@@ -54,6 +56,7 @@ static const float PLOT_PROB_THRESH = 0.4;
 // static const float EPSILON = 1e-16;
 
 static const char* INPUT_NAME = "data";
+static const char* CONSTS_NAME = "CONST";
 static const char* CONVOUT_NAME = "conv_out";
 static const char* CLASS_INPUT_NAME = "class_slice";
 static const char* CONF_INPUT_NAME = "confidence_slice";
@@ -73,7 +76,8 @@ static const float ANCHOR_SHAPE[] = {229, 137, 48, 71, 289, 245,
 
 // static const char *CLASS_NAMES[] = {"car", "pedestrian", "cyclist"};
 // static const char *CLASS_NAMES[] = {"car", "person", "riding", "bike_riding", "boat", "truck", "horse_riding"};
-static const char *CLASS_NAMES[] = {"person", "car", "riding", "boat", "drone", "truck", "parachute", "whale", "building", "bird", "horse_riding"};
+// static const char *CLASS_NAMES[] = {"person", "car", "riding", "boat", "drone", "truck", "parachute", "whale", "building", "bird", "horse_riding"};
+static const char *CLASS_NAMES[] = {"person", "car", "riding", "boat", "wakeboard", "drone", "truck", "paraglider", "whale", "building", "horseride"};
 
 // pixel mean used by the SqueezeDet's author
 static const float PIXEL_MEAN[3]{ 103.939f, 116.779f, 123.68f }; // in BGR order
@@ -81,10 +85,10 @@ static const float PIXEL_MEAN[3]{ 103.939f, 116.779f, 123.68f }; // in BGR order
 static const double DEFAULT_FPS = 10;
 
 static int anchorsNum;
-static int inputIndex, convoutIndex, classInputIndex, confInputIndex, classOutputIndex, confOutputIndex;
+static int inputIndex, constsIndex, convoutIndex, classInputIndex, confInputIndex, classOutputIndex, confOutputIndex;
 
 // device buffers
-static void *convBuffers[2], *interpretBuffers[4];
+static void *convBuffers[3], *interpretBuffers[4];
 static float *bboxInput; // don't need to go into interpret engine
 static int *transAxesDevice;
 static Tensor *convoutTensor;
@@ -270,6 +274,9 @@ createConvEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt, cons
      auto data = network->addInput(INPUT_NAME, dt, DimsCHW{INPUT_C, INPUT_H, INPUT_W});
      assert(data != nullptr);
 
+     auto consts = network->addInput(CONSTS_NAME, dt, DimsCHW{CONSTS_C, CONVOUT_H, CONVOUT_W});
+     assert(consts != nullptr);
+
      std::map<std::string, Weights> weightMap = loadWeights(locateFile(std::string(wts)));
      auto conv1 = network->addConvolution(*data, 64, DimsHW{3, 3},
                                           weightMap["conv1_kernels"],
@@ -360,7 +367,17 @@ createConvEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt, cons
                                weightMap["fire9_expand1x1_biases"],
                                weightMap["fire9_expand3x3_biases"]);
 
-     auto fire10 = addFireLayer(network, *fire9->getOutput(0), 96, 384, 384,
+     auto elew6 = network->addElementWise(*fire6->getOutput(0), *consts, ElementWiseOperation::kPROD);
+
+     ITensor *concat1_input[2] = {elew6->getOutput(0), fire9->getOutput(0)};
+     auto concat1 = network->addConcatenation(concat1_input, 2);
+
+     auto elew7 = network->addElementWise(*fire7->getOutput(0), *consts, ElementWiseOperation::kPROD);
+     ITensor *concat2_input[2] = {elew7->getOutput(0), concat1->getOutput(0)};
+     auto concat2 = network->addConcatenation(concat2_input, 2);
+
+     // auto fire10 = addFireLayer(network, *fire9->getOutput(0), 96, 384, 384,
+     auto fire10 = addFireLayer(network, *concat2->getOutput(0), 96, 384, 384,
                                 weightMap["fire10_squeeze1x1_kernels"],
                                 weightMap["fire10_expand1x1_kernels"],
                                 weightMap["fire10_expand3x3_kernels"],
@@ -464,12 +481,14 @@ static void setUpDevice(IExecutionContext *convContext, IExecutionContext *inter
      const ICudaEngine &convEngine = convContext->getEngine();
      const ICudaEngine &interpretEngine = interpretContext->getEngine();
 
-     assert(convEngine.getNbBindings() == 2);
+     // assert(convEngine.getNbBindings() == 2);
+     assert(convEngine.getNbBindings() == 3);
      assert(interpretEngine.getNbBindings() == 4);
 
      // In order to bind the buffers, we need to know the names of the input and output tensors.
      // note that indices are guaranteed to be less than IEngine::getNbBindings()
      inputIndex = convEngine.getBindingIndex(INPUT_NAME);
+     constsIndex = convEngine.getBindingIndex(CONSTS_NAME);
      convoutIndex = convEngine.getBindingIndex(CONVOUT_NAME);
      classInputIndex = interpretEngine.getBindingIndex(CLASS_INPUT_NAME);
      confInputIndex = interpretEngine.getBindingIndex(CONF_INPUT_NAME);
@@ -479,6 +498,7 @@ static void setUpDevice(IExecutionContext *convContext, IExecutionContext *inter
      // create GPU buffers and a stream
      anchorsNum = batchSize * CONVOUT_W * CONVOUT_H * ANCHORS_PER_GRID;
      size_t inputSize = batchSize * INPUT_C * INPUT_H * INPUT_W * sizeof(float);
+     size_t constsSize = batchSize * CONSTS_C * CONVOUT_H * CONVOUT_W * sizeof(float);
      size_t convoutSize = batchSize * CONVOUT_H * CONVOUT_W * CONVOUT_C * sizeof(float);
      size_t classInputSize = batchSize * CONVOUT_H * CONVOUT_W * CLASS_SLICE_C * sizeof(float);
      size_t confInputSize = batchSize * CONVOUT_H * CONVOUT_W * CONF_SLICE_C * sizeof(float);
@@ -486,6 +506,7 @@ static void setUpDevice(IExecutionContext *convContext, IExecutionContext *inter
      size_t classOutputSize = batchSize * OUTPUT_CLS_SIZE * anchorsNum * sizeof(float);
      size_t confOutputSize = anchorsNum * sizeof(float);
      CHECK(cudaMalloc(&convBuffers[inputIndex], inputSize));
+     CHECK(cudaMalloc(&convBuffers[constsIndex], constsSize));
      CHECK(cudaMalloc(&convBuffers[convoutIndex], convoutSize));
      CHECK(cudaMalloc(&interpretBuffers[classInputIndex], classInputSize));
      CHECK(cudaMalloc(&interpretBuffers[confInputIndex], confInputSize));
@@ -561,12 +582,13 @@ static void setUpDevice(IExecutionContext *convContext, IExecutionContext *inter
 }
 
 // batch size is 1
-static void doInference(IExecutionContext *convContext, IExecutionContext *interpretContext, float* input, int inputSize, int img_width, int img_height, int x_shift, int y_shift, struct predictions *preds, int batchSize)
+static void doInference(IExecutionContext *convContext, IExecutionContext *interpretContext, float* input, size_t inputSize, float *consts, size_t constsSize, int img_width, int img_height, int x_shift, int y_shift, struct predictions *preds, int batchSize)
 {
      CHECK(cudaEventRecord(start_detect, 0));
 
      // DMA the input to the GPU,  execute the batch asynchronously, and DMA it back:
      CHECK(cudaMemcpyAsync(convBuffers[inputIndex], input, inputSize, cudaMemcpyHostToDevice, stream));
+     CHECK(cudaMemcpyAsync(convBuffers[constsIndex], consts, constsSize, cudaMemcpyHostToDevice, stream));
 
      convContext->enqueue(batchSize, convBuffers, stream, nullptr);
      sliceTensor(convoutTensor, classInputTensor, 1, 0, CLASS_SLICE_C);
@@ -648,6 +670,7 @@ static void cleanUp()
      // release the stream and the buffers
      CHECK(cudaStreamDestroy(stream));
      CHECK(cudaFree(convBuffers[inputIndex]));
+     CHECK(cudaFree(convBuffers[constsIndex]));
      CHECK(cudaFree(convBuffers[convoutIndex]));
      CHECK(cudaFree(interpretBuffers[classInputIndex]));
      CHECK(cudaFree(interpretBuffers[confInputIndex]));
@@ -740,6 +763,19 @@ static float *prepareAnchors(const float *anchor_shape, int width, int height, i
      return ret;
 }
 
+static float *prepareConsts(float value, int len)
+{
+     assert(len > 0);
+     float *array;
+     int i;
+
+     array = (float *)sdt_alloc(sizeof(float) * len);
+     for (i = 0; i < len; i++)
+          array[i] = value;
+
+     return array;
+}
+
 static void detectionFilter(struct predictions *preds, float nms_thresh, float prob_thresh)
 {
      assert(preds->bbox && preds->klass && preds->prob && preds->keep);
@@ -827,7 +863,9 @@ static void fprintResult(FILE *fp, struct predictions *preds)
 // }
 
 static size_t inputSize;
+static size_t constsSize;
 static float *data;
+static float *consts;
 static float *anchors;
 static struct predictions preds;
 static IHostMemory *convModelStream{ nullptr };
@@ -842,8 +880,10 @@ void sdt_infer_init(const char *wts)
 {
      // maloc host memory
      inputSize = sizeof(float) * INPUT_C * INPUT_H * INPUT_W;
+     constsSize = sizeof(float) * CONSTS_C * CONVOUT_H * CONVOUT_W;
      data = (float *)sdt_alloc(inputSize);
      anchors = prepareAnchors(ANCHOR_SHAPE, INPUT_W, INPUT_H, INPUT_N, CONVOUT_H, CONVOUT_W, ANCHORS_PER_GRID);
+     consts = prepareConsts(CONSTS_VALUE, CONSTS_C * CONVOUT_H * CONVOUT_W);
      preds.prob = (float *)sdt_alloc(sizeof(float) * TOP_N_DETECTION);
      preds.klass = (float *)sdt_alloc(sizeof(float) * TOP_N_DETECTION);
      preds.bbox = (float *)sdt_alloc(sizeof(float) * TOP_N_DETECTION * OUTPUT_BBOX_SIZE);
@@ -881,7 +921,7 @@ void sdt_infer_detect(unsigned char *input, int height, int width, int x_shift, 
      frame = cv::Mat(INPUT_H, INPUT_W, CV_8UC(3));
      preprocessFrame(frame, frame_origin, INPUT_W, INPUT_H, &img_width, &img_height);
      prepareData(data, frame);
-     doInference(convContext, interpretContext, data, inputSize, img_width, img_height, x_shift, y_shift, &preds, INPUT_N);
+     doInference(convContext, interpretContext, data, inputSize, consts, constsSize, img_width, img_height, x_shift, y_shift, &preds, INPUT_N);
      detectionFilter(&preds, NMS_THRESH, PROB_THRESH);
      // drawBbox(frame_origin, &preds);
      // cv::imshow("detection", frame_origin);
@@ -921,6 +961,7 @@ void sdt_infer_cleanup(void)
 
      // clean up host memory
      sdt_free(data);
+     sdt_free(consts);
      sdt_free(anchors);
      sdt_free(preds.prob);
      sdt_free(preds.klass);

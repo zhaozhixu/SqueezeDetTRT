@@ -190,6 +190,7 @@ int isDeviceMem(const void *ptr)
 void *cloneMem(const void *src, size_t size, CloneKind kind)
 {
      assert(src);
+
      void *p;
      switch (kind) {
      case H2H:

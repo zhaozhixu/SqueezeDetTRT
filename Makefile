@@ -12,7 +12,8 @@ CFLAGS += -g -O0 -DDEBUG
 CUFLAGS += -lineinfo
 LDFLAGS += -g -O0
 else
-CFLAGS += -O3 -DNDEBUG
+# CFLAGS += -O3 -DNDEBUG
+CFLAGS += -O3
 CUFLAGS +=
 LDFLAGS += -O3
 endif
