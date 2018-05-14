@@ -63,7 +63,7 @@ def getImageNames(imgDir):
         if 'jpg' in f:
             imgname = f.split('.')[0]
             nameset1.append(imgname)
-    nameset1.sort(key = int)
+    nameset1.sort(key = str)
     for f in nameset1:
         f = f + ".jpg"
         nameset2.append(f)

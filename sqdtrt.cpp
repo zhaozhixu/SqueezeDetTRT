@@ -16,7 +16,8 @@ static const float PLOT_PROB_THRESH = 0.3;
 static const char DEFAULT_WTS[] = "data/sqdtrt.wts";
 
 // static const char *CLASS_NAMES[] = {"car", "person", "riding", "bike_riding", "boat", "truck", "horse_riding"};
-static const char *CLASS_NAMES[] = {"person", "car", "riding", "boat", "drone", "truck", "parachute", "whale", "building", "bird", "horse_riding"};
+// static const char *CLASS_NAMES[] = {"person", "car", "riding", "boat", "drone", "truck", "parachute", "whale", "building", "bird", "horse_riding"};
+static const char *CLASS_NAMES[] = {"person", "car", "riding", "boat", "group", "wakeboard", "drone", "truck", "paraglider", "whale", "building", "horseride"};
 
 #define IMG_NAME_SIZE_GUESS 1024
 

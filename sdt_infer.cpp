@@ -33,17 +33,20 @@ static const int INPUT_H = 368;
 static const int INPUT_W = 640;
 
 // static const int CONVOUT_C = 108;
-static const int CONVOUT_C = 144;
+// static const int CONVOUT_C = 144;
+static const int CONVOUT_C = 153;
 static const int CONVOUT_H = 23;
 static const int CONVOUT_W = 40;
 
 // static const int CLASS_SLICE_C = 63;
-static const int CLASS_SLICE_C = 99;
+// static const int CLASS_SLICE_C = 99;
+static const int CLASS_SLICE_C = 108;
 static const int CONF_SLICE_C = 9;
 static const int BBOX_SLICE_C = 36;
 
 // static const int OUTPUT_CLS_SIZE = 7;
-static const int OUTPUT_CLS_SIZE = 11;
+// static const int OUTPUT_CLS_SIZE = 11;
+static const int OUTPUT_CLS_SIZE = 12;
 static const int OUTPUT_BBOX_SIZE = 4;
 
 static const int TOP_N_DETECTION = 64;
@@ -73,7 +76,8 @@ static const float ANCHOR_SHAPE[] = {229, 137, 48, 71, 289, 245,
 
 // static const char *CLASS_NAMES[] = {"car", "pedestrian", "cyclist"};
 // static const char *CLASS_NAMES[] = {"car", "person", "riding", "bike_riding", "boat", "truck", "horse_riding"};
-static const char *CLASS_NAMES[] = {"person", "car", "riding", "boat", "drone", "truck", "parachute", "whale", "building", "bird", "horse_riding"};
+// static const char *CLASS_NAMES[] = {"person", "car", "riding", "boat", "drone", "truck", "parachute", "whale", "building", "bird", "horse_riding"};
+static const char *CLASS_NAMES[] = {"person", "car", "riding", "boat", "group", "wakeboard", "drone", "truck", "paraglider", "whale", "building", "horseride"};
 
 // pixel mean used by the SqueezeDet's author
 static const float PIXEL_MEAN[3]{ 103.939f, 116.779f, 123.68f }; // in BGR order
@@ -201,35 +205,6 @@ public:
 
 static Logger gLogger;
 
-static std::string locateFile_1(const std::string& input, const std::vector<std::string> & directories)
-{
-     std::string file;
-     const int MAX_DEPTH{10};
-     bool found{false};
-     for (auto &dir : directories)
-          {
-               file = dir + input;
-               for (int i = 0; i < MAX_DEPTH && !found; i++)
-                    {
-                         std::ifstream checkFile(file);
-                         found = checkFile.is_open();
-                         if (found) break;
-                         file = "../" + file;
-                    }
-               if (found) break;
-               file.clear();
-          }
-
-     assert(!file.empty() && "Could not find a file due to it not existing in the data directory.");
-     return file;
-}
-
-static std::string locateFile(const std::string& input)
-{
-     std::vector<std::string> dirs{"./"};
-     return locateFile_1(input, dirs);
-}
-
 static ILayer*
 addFireLayer(INetworkDefinition* network, ITensor &input, int ns1x1, int ne1x1, int ne3x3,
              Weights &wks1x1, Weights &wke1x1, Weights &wke3x3,
@@ -270,28 +245,33 @@ createConvEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt, cons
      auto data = network->addInput(INPUT_NAME, dt, DimsCHW{INPUT_C, INPUT_H, INPUT_W});
      assert(data != nullptr);
 
-     std::map<std::string, Weights> weightMap = loadWeights(locateFile(std::string(wts)));
+     std::map<std::string, Weights> weightMap = loadWeights(std::string(wts));
      auto conv1 = network->addConvolution(*data, 64, DimsHW{3, 3},
                                           weightMap["conv1_kernels"],
                                           weightMap["conv1_bias"]);
      assert(conv1 != nullptr);
-     // conv1->setStride(DimsHW{2, 2});
-     conv1->setStride(DimsHW{1, 1});
+     conv1->setStride(DimsHW{2, 2});
+     // conv1->setStride(DimsHW{1, 1});
      conv1->setPadding(DimsHW{1, 1}); // all kernels of size 3x3 need to set padding 1x1
      auto relu1 = network->addActivation(*conv1->getOutput(0), ActivationType::kRELU);
      assert(relu1 != nullptr);
 
-     auto pool1_1 = network->addPooling(*relu1->getOutput(0), PoolingType::kMAX, DimsHW{3, 3});
-     assert(pool1_1 != nullptr);
-     pool1_1->setStride(DimsHW{2, 2});
-     pool1_1->setPadding(DimsHW{1, 1});
+     auto pool1 = network->addPooling(*relu1->getOutput(0), PoolingType::kMAX, DimsHW{3, 3});
+     assert(pool1 != nullptr);
+     pool1->setStride(DimsHW{2, 2});
+     pool1->setPadding(DimsHW{1, 1});
 
-     auto pool1_2 = network->addPooling(*pool1_1->getOutput(0), PoolingType::kMAX, DimsHW{3, 3});
-     assert(pool1_2 != nullptr);
-     pool1_2->setStride(DimsHW{2, 2});
-     pool1_2->setPadding(DimsHW{1, 1});
+     // auto pool1_1 = network->addPooling(*relu1->getOutput(0), PoolingType::kMAX, DimsHW{3, 3});
+     // assert(pool1_1 != nullptr);
+     // pool1_1->setStride(DimsHW{2, 2});
+     // pool1_1->setPadding(DimsHW{1, 1});
 
-     auto fire2 = addFireLayer(network, *pool1_2->getOutput(0), 16, 64, 64,
+     // auto pool1_2 = network->addPooling(*pool1_1->getOutput(0), PoolingType::kMAX, DimsHW{3, 3});
+     // assert(pool1_2 != nullptr);
+     // pool1_2->setStride(DimsHW{2, 2});
+     // pool1_2->setPadding(DimsHW{1, 1});
+
+     auto fire2 = addFireLayer(network, *pool1->getOutput(0), 16, 64, 64,
                                weightMap["fire2_squeeze1x1_kernels"],
                                weightMap["fire2_expand1x1_kernels"],
                                weightMap["fire2_expand3x3_kernels"],
