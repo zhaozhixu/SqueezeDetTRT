@@ -1,8 +1,8 @@
 #include "sdt_clib.h"
 
-void sdt_init()
+void sdt_init(const char *wts)
 {
-	sdt_infer_init();
+	sdt_infer_init(wts);
 }
 
 void sdt_detect(unsigned char *input, int height, int width, int x_shift, int y_shift,

@@ -32,18 +32,19 @@ static const int INPUT_C = 3;
 static const int INPUT_H = 384;
 static const int INPUT_W = 1248;
 
-static const int CONVOUT_C = 108;
+// static const int CONVOUT_C = 108;
 // static const int CONVOUT_C = 135;
+static const int CONVOUT_C = 144;
 static const int CONVOUT_H = 24;
 static const int CONVOUT_W = 78;
 
-static const int CLASS_SLICE_C = 63;
-// static const int CLASS_SLICE_C = 90;
+// static const int CLASS_SLICE_C = 63;
+static const int CLASS_SLICE_C = 99;
 static const int CONF_SLICE_C = 9;
 static const int BBOX_SLICE_C = 36;
 
-static const int OUTPUT_CLS_SIZE = 7;
-// static const int OUTPUT_CLS_SIZE = 10;
+// static const int OUTPUT_CLS_SIZE = 7;
+static const int OUTPUT_CLS_SIZE = 11;
 static const int OUTPUT_BBOX_SIZE = 4;
 
 static const int TOP_N_DETECTION = 64;
@@ -69,7 +70,8 @@ static const float ANCHOR_SHAPE[] = {36, 37, 366, 174, 115, 59, /* w x h, 2 elem
                               224, 108, 78, 170, 72, 43};
 
 // static const char *CLASS_NAMES[] = {"car", "pedestrian", "cyclist"};
-static const char *CLASS_NAMES[] = {"car", "person", "riding", "bike_riding", "boat", "truck", "horse_riding"};
+// static const char *CLASS_NAMES[] = {"car", "person", "riding", "bike_riding", "boat", "truck", "horse_riding"};
+static const char *CLASS_NAMES[] = {"person", "car", "riding", "boat", "wakeboard", "drone", "truck", "paraglider", "whale", "building", "horseride"};
 // static const char *CLASS_NAMES[] = {"person", "car", "riding", "boat", "drone", "truck", "parachute", "whale", "building", "horse_riding"};
 
 // pixel mean used by the SqueezeDet's author
@@ -142,8 +144,8 @@ void preprocessFrame(cv::Mat &frame, cv::Mat &frame_origin, int width, int heigh
 std::map<std::string, Weights> loadWeights(const std::string file)
 {
     std::map<std::string, Weights> weightMap;
-	std::ifstream input(file);
-	assert(input.is_open() && "Unable to load weight file.");
+    std::ifstream input(file);
+    assert(input.is_open() && "Unable to load weight file.");
     int32_t count;
     input >> count;
     assert(count > 0 && "Invalid weight map file.");
@@ -223,7 +225,7 @@ static std::string locateFile_1(const std::string& input, const std::vector<std:
 
 static std::string locateFile(const std::string& input)
 {
-     std::vector<std::string> dirs{"data/"};
+     std::vector<std::string> dirs{"./"};
      return locateFile_1(input, dirs);
 }
 
@@ -260,14 +262,15 @@ addFireLayer(INetworkDefinition* network, ITensor &input, int ns1x1, int ne1x1, 
 
 // Creat the Engine using only the API and not any parser.
 static ICudaEngine *
-createConvEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
+createConvEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt, const char *wts)
 {
      INetworkDefinition* network = builder->createNetwork();
 
      auto data = network->addInput(INPUT_NAME, dt, DimsCHW{INPUT_C, INPUT_H, INPUT_W});
      assert(data != nullptr);
 
-     std::map<std::string, Weights> weightMap = loadWeights(locateFile("sqdtrt_dji.wts"));
+     // std::map<std::string, Weights> weightMap = loadWeights(locateFile(std::string(wts)));
+     std::map<std::string, Weights> weightMap = loadWeights(std::string(wts));
      auto conv1 = network->addConvolution(*data, 64, DimsHW{3, 3},
                                           weightMap["conv1_kernels"],
                                           weightMap["conv1_bias"]);
@@ -429,13 +432,13 @@ createInterpretEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
 }
 
 // maxBatch - NB must be at least as large as the batch we want to run with)
-static void APIToModel(unsigned int maxBatchSize, IHostMemory **convModelStream, IHostMemory **interpretModelStream)
+static void APIToModel(unsigned int maxBatchSize, IHostMemory **convModelStream, IHostMemory **interpretModelStream, const char *wts)
 {
      // create the builder
      IBuilder* builder = createInferBuilder(gLogger);
 
      // create the model to populate the network, then set the outputs and create an engine
-     ICudaEngine* convEngine = createConvEngine(maxBatchSize, builder, DataType::kFLOAT);
+     ICudaEngine* convEngine = createConvEngine(maxBatchSize, builder, DataType::kFLOAT, wts);
      ICudaEngine* interpretEngine = createInterpretEngine(maxBatchSize, builder, DataType::kFLOAT);
 
      assert(convEngine != nullptr);
@@ -827,7 +830,8 @@ static ICudaEngine* interpretEngine;
 static IExecutionContext *convContext;
 static IExecutionContext *interpretContext;
 
-void sdt_infer_init()
+
+void sdt_infer_init(const char *wts)
 {
      // maloc host memory
      inputSize = sizeof(float) * INPUT_C * INPUT_H * INPUT_W;
@@ -842,7 +846,7 @@ void sdt_infer_init()
      timeMisc = 0;
 
      // create engines
-     APIToModel(INPUT_N, &convModelStream, &interpretModelStream);
+     APIToModel(INPUT_N, &convModelStream, &interpretModelStream, wts);
 
      // deserialize engines
      runtime = createInferRuntime(gLogger);
