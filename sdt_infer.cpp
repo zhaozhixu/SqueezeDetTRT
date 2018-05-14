@@ -200,35 +200,6 @@ public:
 
 static Logger gLogger;
 
-static std::string locateFile_1(const std::string& input, const std::vector<std::string> & directories)
-{
-     std::string file;
-     const int MAX_DEPTH{10};
-     bool found{false};
-     for (auto &dir : directories)
-          {
-               file = dir + input;
-               for (int i = 0; i < MAX_DEPTH && !found; i++)
-                    {
-                         std::ifstream checkFile(file);
-                         found = checkFile.is_open();
-                         if (found) break;
-                         file = "../" + file;
-                    }
-               if (found) break;
-               file.clear();
-          }
-
-     assert(!file.empty() && "Could not find a file due to it not existing in the data directory.");
-     return file;
-}
-
-static std::string locateFile(const std::string& input)
-{
-     std::vector<std::string> dirs{"./"};
-     return locateFile_1(input, dirs);
-}
-
 static ILayer*
 addFireLayer(INetworkDefinition* network, ITensor &input, int ns1x1, int ne1x1, int ne3x3,
              Weights &wks1x1, Weights &wke1x1, Weights &wke3x3,
