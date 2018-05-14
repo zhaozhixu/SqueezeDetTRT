@@ -15,9 +15,14 @@ And you also have to install CUDA 8.0 and TensorRT 3.0 libraries, according to t
 and [TensorRT](https://developer.nvidia.com/rdp/form/tensorrt-download-survey). Also remember to put `nvcc` (usually in `/usr/local/cuda/bin`) in environment variable `PATH`.
 
 ## Build
+### Build a executable binary
 Use `make` from a terminal in this folder to compile executable binary.
 
+### Build a shared object file
+Use `make libso` from a terminal in this folder to compile shared object `libsqdtrt.so`.
+
 ## Usage
+### Executable binary usage
 After compilation, use `./sqdtrt -h` to learn the usage for this program, as follows.
 ```
 Usage: sqdtrt [options] IMAGE_DIR RESULT_DIR
@@ -37,6 +42,15 @@ Options:
        -y, --y-shift=Y_SHIFT                   Shift all bboxes rightward Y_SHIFT pixels.
        -h, --help                              Print this help and exit.
 ```
+### DAC比赛脚本使用
+使用`make libso`完成共享库的编译后，确保`data/py_test/images`和`data/py_test/labels`是有效的数据集和标签，然后执行
+`python main.py`开始执行比赛脚本，若显存不够可能需要在前面加上`CUDA_VISIBLE_DEVICES=<GPU_ID>`来选择某个显卡。测试结果保存在`data/py_test/result`里。数据集较大时可能会花费较长时间。不要轻易修改`data/py_test/images`和`data/py_test/labels`里的内容，因为他们是链接，还有其他程序在使用。
+
+执行以下命令
+```
+scripts/iou.pl data/py_test/result/xml/XJTU-IAIR-Falcon data/py_test/labels scripts/iou_res.txt
+```
+计算平均IoU，每张图片的IoU结果保存在`scripts/iou_res.txt`中。
 
 ## Demo
 There are two demoes for image and video detections below. The image and video for demoes are located in `data/example`.
