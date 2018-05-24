@@ -45,6 +45,29 @@ static __device__ void getIndexes(int id, int *ids, int ndim, int *dims)
 /*      dst[di] = src[si]; */
 /* } */
 
+/* __global__ void sliceTensorKernel(float *src, float *dst, int ndim, int *sdims, int *ddims, int naxis, int *axes, int *n_pick_ids, int **pick_ids, int *sids, int *dids, int block_size, int total) */
+/* { */
+/*      int di = blockIdx.x * block_size + threadIdx.x; */
+/*      if (di >= total) */
+/*           return; */
+
+/*      int *t_sids = sids + di * ndim; */
+/*      int *t_dids = dids + di * ndim; */
+/*      getIndexes(di, t_dids, ndim, ddims); */
+/*      int i, j; */
+/*      for (i = 0, j = 0; i < ndim; i++) { */
+/*           if (i != axes[j]) { */
+/*                t_sids[i] = t_dids[i]; */
+/*           } else { */
+/*                t_sids[i] = pick_ids[j][t_dids[i]]; */
+/*                j++; */
+/*           } */
+/*      } */
+
+/*      int si = getIndex(t_sids, ndim, sdims); */
+/*      dst[di] = src[si]; */
+/* } */
+
 __global__ void sliceTensorKernel(float *src, float *dst, int start, int s_vol, int d_vol, int vol, int block_size, int total)
 {
      int di = blockIdx.x * block_size + threadIdx.x;
@@ -153,6 +176,10 @@ static void assertTensor(const Tensor *tensor)
 
 int isTensorValid(const Tensor *tensor)
 {
+     assert(tensor);
+     assert(tensor->data);
+     assert(tensor->ndim < MAXDIM && tensor->ndim > 0 );
+     assert(tensor->len == computeLength(tensor->ndim, tensor->dims));
      return (tensor && tensor->data &&
              tensor->ndim < MAXDIM && tensor->ndim > 0 &&
              tensor->len == computeLength(tensor->ndim, tensor->dims));
@@ -478,10 +505,54 @@ Tensor *createSlicedTensor(const Tensor *src, int dim, int start, int len)
 /*      sliceTensorKernel<<<block_num, block_size>>>(src->data, dst->data, sdim, ddim, start, block_size); */
 /*      return dst; */
 /* } */
+/* axes should be in ascending order */
+/* Tensor *sliceTensor(const Tensor *src, Tensor *dst, int naxis, int *axes, int *starts, int *ends, int *strides, int **workspace) */
+/* { */
+/*      assert(isTensorValid(src) && isTensorValid(dst)); */
+/*      assert(isDeviceMem(src->data) && isDeviceMem(dst->data)); */
+/*      assert(dst->ndim == src->ndim); */
+/*      for (int i = 0; i < dst->ndim; i++) */
+/*           assert(i == dim ? dst->dims[i] == len : dst->dims[i] == src->dims[i]); */
+
+/*      int i; */
+/*      int *sdims, *ddims, *axes_device, *n_pick_ids_host, **pick_ids_host, *n_pick_ids_device, **pick_ids_device, *sids, *dids, *ends_tmp; */
+/*      sdims = (int *)cloneMem(src->dims, sizeof(int)*src->ndim, H2D); */
+/*      ddims = (int *)cloneMem(dst->dims, sizeof(int)*dst->ndim, H2D); */
+/*      axes_device = (int *)cloneMem(axes, sizeof(int)*naxis, H2D); */
+/*      n */
+/*      ends_tmp = (int *)cloneMem(ends, sizeof(int)*naxis, H2H); */
+/*      if (!workspace) { */
+/*           checkError(cudaMalloc(&sids, sizeof(int) * dst->ndim * dst->len)); */
+/*           checkError(cudaMalloc(&dids, sizeof(int) * dst->ndim * dst->len)); */
+/*      } else { */
+/*           sids = workspace[0]; */
+/*           dids = workspace[1]; */
+/*      } */
+/*      for (i = 0; i < naxis; i++) { */
+/*           if (ends_tmp[i] > src->dims[axes[i]]) */
+/*                ends_tmp[i] = src->dims[axes[i]]; */
+/*           n_pick_ids[i] = */
+/*      } */
+
+/*      int thread_num, block_size, block_num; /\* block size and number of cuda threads *\/ */
+/*      thread_num = dst->len; */
+/*      block_size = MAX_THREADS_PER_BLOCK; */
+/*      block_num = thread_num / block_size + 1; */
+
+/*      sliceTensorKernel<<<block_num, block_size>>>(src->data, dst->data, start, s_vol, d_vol, vol, block_size, thread_num); */
+
+/*      checkError(cudaFree(sdims)); */
+/*      checkError(cudaFree(ddims)); */
+/*      checkError(cudaFree(axes_device)); */
+/*      checkError(cudaFree(n_pick_ids)); */
+/*      sdt_free(ends_tmp); */
+/*      return dst; */
+/* } */
 
 Tensor *sliceTensor(const Tensor *src, Tensor *dst, int dim, int start, int len)
 {
-     assert(isTensorValid(src) && isTensorValid(dst));
+     assert(isTensorValid(src));
+     assert(isTensorValid(dst));
      assert(isDeviceMem(src->data) && isDeviceMem(dst->data));
      assert(dst->ndim == src->ndim);
      for (int i = 0; i < dst->ndim; i++)

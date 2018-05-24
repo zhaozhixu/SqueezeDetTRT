@@ -38,6 +38,9 @@ static const int CONVOUT_C = 153;
 static const int CONVOUT_H = 23;
 static const int CONVOUT_W = 40;
 
+static const int SPLIT_C = 128;
+static const int FIRE9_C = 512;
+
 // static const int CLASS_SLICE_C = 63;
 // static const int CLASS_SLICE_C = 99;
 static const int CLASS_SLICE_C = 108;
@@ -56,6 +59,14 @@ static const float PROB_THRESH = 0.3;
 static const float PLOT_PROB_THRESH = 0.4;
 // static const float EPSILON = 1e-16;
 
+static const char *CONV1_POOL3_NAME = "conv1_pool3";
+static const char *CONV1_FIRE9_NAME = "conv1_fire9";
+static const char *CONV2_SPLIT1_NAME = "conv2_split1";
+static const char *CONV2_SPLIT2_NAME = "conv2_split2";
+static const char *CONV2_SPLIT3_NAME = "conv2_split3";
+static const char *CONV2_SPLIT4_NAME = "conv2_split4";
+static const char *CONV2_SPLIT5_NAME = "conv2_split5";
+static const char *CONV2_FIRE9_NAME = "conv2_fire9";
 static const char* INPUT_NAME = "data";
 static const char* CONVOUT_NAME = "conv_out";
 static const char* CLASS_INPUT_NAME = "class_slice";
@@ -85,12 +96,20 @@ static const float PIXEL_MEAN[3]{ 103.939f, 116.779f, 123.68f }; // in BGR order
 static const double DEFAULT_FPS = 10;
 
 static int anchorsNum;
-static int inputIndex, convoutIndex, classInputIndex, confInputIndex, classOutputIndex, confOutputIndex;
+static int inputIndex, pool3Index, fire9OutIndex, split1Index, split2Index, split3Index, split4Index, split5Index, fire9InIndex, convoutIndex, classInputIndex, confInputIndex, classOutputIndex, confOutputIndex;
 
 // device buffers
-static void *convBuffers[2], *interpretBuffers[4];
+static void *conv1Buffers[3],*conv2Buffers[7],  *interpretBuffers[4];
 static float *bboxInput; // don't need to go into interpret engine
+static float *splitTmp;
 static int *transAxesDevice;
+static Tensor *pool3Tensor;
+static Tensor *split1Tensor;
+static Tensor *split2Tensor;
+static Tensor *split3Tensor;
+static Tensor *split4Tensor;
+static Tensor *split5Tensor;
+static Tensor *splitTmpTensor;
 static Tensor *convoutTensor;
 static Tensor *classInputTensor;
 static Tensor *confInputTensor;
@@ -238,7 +257,7 @@ addFireLayer(INetworkDefinition* network, ITensor &input, int ns1x1, int ne1x1, 
 
 // Creat the Engine using only the API and not any parser.
 static ICudaEngine *
-createConvEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt, const char *wts)
+createConv1Engine(unsigned int maxBatchSize, IBuilder *builder, DataType dt, const char *wts)
 {
      INetworkDefinition* network = builder->createNetwork();
 
@@ -250,28 +269,28 @@ createConvEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt, cons
                                           weightMap["conv1_kernels"],
                                           weightMap["conv1_bias"]);
      assert(conv1 != nullptr);
-     conv1->setStride(DimsHW{2, 2});
-     // conv1->setStride(DimsHW{1, 1});
+     // conv1->setStride(DimsHW{2, 2});
+     conv1->setStride(DimsHW{1, 1});
      conv1->setPadding(DimsHW{1, 1}); // all kernels of size 3x3 need to set padding 1x1
      auto relu1 = network->addActivation(*conv1->getOutput(0), ActivationType::kRELU);
      assert(relu1 != nullptr);
 
-     auto pool1 = network->addPooling(*relu1->getOutput(0), PoolingType::kMAX, DimsHW{3, 3});
-     assert(pool1 != nullptr);
-     pool1->setStride(DimsHW{2, 2});
-     pool1->setPadding(DimsHW{1, 1});
+     // auto pool1 = network->addPooling(*relu1->getOutput(0), PoolingType::kMAX, DimsHW{3, 3});
+     // assert(pool1 != nullptr);
+     // pool1->setStride(DimsHW{2, 2});
+     // pool1->setPadding(DimsHW{1, 1});
 
-     // auto pool1_1 = network->addPooling(*relu1->getOutput(0), PoolingType::kMAX, DimsHW{3, 3});
-     // assert(pool1_1 != nullptr);
-     // pool1_1->setStride(DimsHW{2, 2});
-     // pool1_1->setPadding(DimsHW{1, 1});
+     auto pool1_1 = network->addPooling(*relu1->getOutput(0), PoolingType::kMAX, DimsHW{3, 3});
+     assert(pool1_1 != nullptr);
+     pool1_1->setStride(DimsHW{2, 2});
+     pool1_1->setPadding(DimsHW{1, 1});
 
-     // auto pool1_2 = network->addPooling(*pool1_1->getOutput(0), PoolingType::kMAX, DimsHW{3, 3});
-     // assert(pool1_2 != nullptr);
-     // pool1_2->setStride(DimsHW{2, 2});
-     // pool1_2->setPadding(DimsHW{1, 1});
+     auto pool1_2 = network->addPooling(*pool1_1->getOutput(0), PoolingType::kMAX, DimsHW{3, 3});
+     assert(pool1_2 != nullptr);
+     pool1_2->setStride(DimsHW{2, 2});
+     pool1_2->setPadding(DimsHW{1, 1});
 
-     auto fire2 = addFireLayer(network, *pool1->getOutput(0), 16, 64, 64,
+     auto fire2 = addFireLayer(network, *pool1_2->getOutput(0), 16, 64, 64,
                                weightMap["fire2_squeeze1x1_kernels"],
                                weightMap["fire2_expand1x1_kernels"],
                                weightMap["fire2_expand3x3_kernels"],
@@ -290,6 +309,8 @@ createConvEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt, cons
      assert(pool3 != nullptr);
      pool3->setStride(DimsHW{2, 2});
      pool3->setPadding(DimsHW{1, 1});
+     pool3->getOutput(0)->setName(CONV1_POOL3_NAME);
+     network->markOutput(*pool3->getOutput(0));
 
      auto fire4 = addFireLayer(network, *pool3->getOutput(0), 32, 128, 128,
                                weightMap["fire4_squeeze1x1_kernels"],
@@ -340,7 +361,49 @@ createConvEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt, cons
                                weightMap["fire9_expand1x1_biases"],
                                weightMap["fire9_expand3x3_biases"]);
 
-     auto fire10 = addFireLayer(network, *fire9->getOutput(0), 96, 384, 384,
+     fire9->getOutput(0)->setName(CONV1_FIRE9_NAME);
+     network->markOutput(*fire9->getOutput(0));
+
+     // Build the engine
+     builder->setMaxBatchSize(maxBatchSize);
+     builder->setMaxWorkspaceSize(1 << 20);
+
+     auto engine = builder->buildCudaEngine(*network);
+     // we don't need the network any more
+     // network->destroy();	// SIGSEGV, don't know why
+
+     // Once we have built the cuda engine, we can release all of our held memory.
+     for (auto &mem : weightMap)
+     {
+          sdt_free((void*)(mem.second.values));
+     }
+     return engine;
+}
+
+static ICudaEngine *
+createConv2Engine(unsigned int maxBatchSize, IBuilder *builder, DataType dt, const char *wts)
+{
+     INetworkDefinition* network = builder->createNetwork();
+
+     auto split1 = network->addInput(CONV2_SPLIT1_NAME, dt, DimsCHW{SPLIT_C, CONVOUT_H, CONVOUT_W});
+     assert(split1 != nullptr);
+     auto split2 = network->addInput(CONV2_SPLIT2_NAME, dt, DimsCHW{SPLIT_C, CONVOUT_H, CONVOUT_W});
+     assert(split2 != nullptr);
+     auto split3 = network->addInput(CONV2_SPLIT3_NAME, dt, DimsCHW{SPLIT_C, CONVOUT_H, CONVOUT_W});
+     assert(split3 != nullptr);
+     auto split4 = network->addInput(CONV2_SPLIT4_NAME, dt, DimsCHW{SPLIT_C, CONVOUT_H, CONVOUT_W});
+     assert(split4 != nullptr);
+     auto split5 = network->addInput(CONV2_SPLIT5_NAME, dt, DimsCHW{SPLIT_C, CONVOUT_H, CONVOUT_W});
+     assert(split5 != nullptr);
+     auto fire9 = network->addInput(CONV2_FIRE9_NAME, dt, DimsCHW{FIRE9_C, CONVOUT_H, CONVOUT_W});
+     assert(fire9 != nullptr);
+
+     std::map<std::string, Weights> weightMap = loadWeights(std::string(wts));
+
+     ITensor *concat_input[6] = {split1, split2, split3, split4, split5, fire9};
+     auto concat = network->addConcatenation(concat_input, 6);
+
+     auto fire10 = addFireLayer(network, *concat->getOutput(0), 96, 384, 384,
                                 weightMap["fire10_squeeze1x1_kernels"],
                                 weightMap["fire10_expand1x1_kernels"],
                                 weightMap["fire10_expand3x3_kernels"],
@@ -418,39 +481,53 @@ createInterpretEngine(unsigned int maxBatchSize, IBuilder *builder, DataType dt)
 }
 
 // maxBatch - NB must be at least as large as the batch we want to run with)
-static void APIToModel(unsigned int maxBatchSize, IHostMemory **convModelStream, IHostMemory **interpretModelStream, const char *wts)
+static void APIToModel(unsigned int maxBatchSize, IHostMemory **conv1ModelStream, IHostMemory **conv2ModelStream, IHostMemory **interpretModelStream, const char *wts)
 {
      // create the builder
      IBuilder* builder = createInferBuilder(gLogger);
 
      // create the model to populate the network, then set the outputs and create an engine
-     ICudaEngine* convEngine = createConvEngine(maxBatchSize, builder, DataType::kFLOAT, wts);
+     ICudaEngine* conv1Engine = createConv1Engine(maxBatchSize, builder, DataType::kFLOAT, wts);
+     ICudaEngine* conv2Engine = createConv2Engine(maxBatchSize, builder, DataType::kFLOAT, wts);
      ICudaEngine* interpretEngine = createInterpretEngine(maxBatchSize, builder, DataType::kFLOAT);
 
-     assert(convEngine != nullptr);
+     assert(conv1Engine != nullptr);
+     assert(conv2Engine != nullptr);
      assert(interpretEngine != nullptr);
 
      // serialize the engine, then close everything down
-     (*convModelStream) = convEngine->serialize();
+     (*conv1ModelStream) = conv1Engine->serialize();
+     (*conv2ModelStream) = conv2Engine->serialize();
      (*interpretModelStream) = interpretEngine->serialize();
-     convEngine->destroy();
+     conv1Engine->destroy();
+     conv2Engine->destroy();
      interpretEngine->destroy();
      builder->destroy();
 }
 
 // batch size is 1
-static void setUpDevice(IExecutionContext *convContext, IExecutionContext *interpretContext, float* anchors, int batchSize)
+static void setUpDevice(IExecutionContext *conv1Context, IExecutionContext *conv2Context, IExecutionContext *interpretContext, float* anchors, int batchSize)
 {
-     const ICudaEngine &convEngine = convContext->getEngine();
+     const ICudaEngine &conv1Engine = conv1Context->getEngine();
+     const ICudaEngine &conv2Engine = conv2Context->getEngine();
      const ICudaEngine &interpretEngine = interpretContext->getEngine();
 
-     assert(convEngine.getNbBindings() == 2);
+     assert(conv1Engine.getNbBindings() == 3);
+     assert(conv2Engine.getNbBindings() == 7);
      assert(interpretEngine.getNbBindings() == 4);
 
      // In order to bind the buffers, we need to know the names of the input and output tensors.
      // note that indices are guaranteed to be less than IEngine::getNbBindings()
-     inputIndex = convEngine.getBindingIndex(INPUT_NAME);
-     convoutIndex = convEngine.getBindingIndex(CONVOUT_NAME);
+     inputIndex = conv1Engine.getBindingIndex(INPUT_NAME);
+     pool3Index = conv1Engine.getBindingIndex(CONV1_POOL3_NAME);
+     fire9OutIndex = conv1Engine.getBindingIndex(CONV1_FIRE9_NAME);
+     split1Index = conv2Engine.getBindingIndex(CONV2_SPLIT1_NAME);
+     split2Index = conv2Engine.getBindingIndex(CONV2_SPLIT2_NAME);
+     split3Index = conv2Engine.getBindingIndex(CONV2_SPLIT3_NAME);
+     split4Index = conv2Engine.getBindingIndex(CONV2_SPLIT4_NAME);
+     split5Index = conv2Engine.getBindingIndex(CONV2_SPLIT5_NAME);
+     fire9InIndex = conv2Engine.getBindingIndex(CONV2_FIRE9_NAME);
+     convoutIndex = conv2Engine.getBindingIndex(CONVOUT_NAME);
      classInputIndex = interpretEngine.getBindingIndex(CLASS_INPUT_NAME);
      confInputIndex = interpretEngine.getBindingIndex(CONF_INPUT_NAME);
      classOutputIndex = interpretEngine.getBindingIndex(CLASS_OUTPUT_NAME);
@@ -459,20 +536,37 @@ static void setUpDevice(IExecutionContext *convContext, IExecutionContext *inter
      // create GPU buffers and a stream
      anchorsNum = batchSize * CONVOUT_W * CONVOUT_H * ANCHORS_PER_GRID;
      size_t inputSize = batchSize * INPUT_C * INPUT_H * INPUT_W * sizeof(float);
+     size_t pool3Size = batchSize * SPLIT_C * CONVOUT_H * CONVOUT_W * 4 * sizeof(float);
+     size_t fire9Size = batchSize * FIRE9_C * CONVOUT_H * CONVOUT_W * sizeof(float);
+     size_t splitSize = batchSize * SPLIT_C * CONVOUT_H * CONVOUT_W * sizeof(float);
+     size_t splitTmpSize = batchSize * SPLIT_C * CONVOUT_H*2 * CONVOUT_W * sizeof(float);
      size_t convoutSize = batchSize * CONVOUT_H * CONVOUT_W * CONVOUT_C * sizeof(float);
      size_t classInputSize = batchSize * CONVOUT_H * CONVOUT_W * CLASS_SLICE_C * sizeof(float);
      size_t confInputSize = batchSize * CONVOUT_H * CONVOUT_W * CONF_SLICE_C * sizeof(float);
      size_t bboxInputSize = batchSize * CONVOUT_H * CONVOUT_W * BBOX_SLICE_C * sizeof(float);
      size_t classOutputSize = batchSize * OUTPUT_CLS_SIZE * anchorsNum * sizeof(float);
      size_t confOutputSize = anchorsNum * sizeof(float);
-     CHECK(cudaMalloc(&convBuffers[inputIndex], inputSize));
-     CHECK(cudaMalloc(&convBuffers[convoutIndex], convoutSize));
+     CHECK(cudaMalloc(&conv1Buffers[inputIndex], inputSize));
+     CHECK(cudaMalloc(&conv1Buffers[pool3Index], pool3Size));
+     CHECK(cudaMalloc(&conv1Buffers[fire9OutIndex], fire9Size));
+     CHECK(cudaMalloc(&conv2Buffers[split1Index], splitSize));
+     CHECK(cudaMalloc(&conv2Buffers[split2Index], splitSize));
+     CHECK(cudaMalloc(&conv2Buffers[split3Index], splitSize));
+     CHECK(cudaMalloc(&conv2Buffers[split4Index], splitSize));
+     CHECK(cudaMalloc(&conv2Buffers[split5Index], splitSize));
+     conv2Buffers[fire9InIndex] = conv1Buffers[fire9OutIndex];
+     // CHECK(cudaMalloc(&conv2Buffers[fire9InIndex], fire9Size));
+     CHECK(cudaMalloc(&conv2Buffers[convoutIndex], convoutSize));
+     CHECK(cudaMalloc(&splitTmp, splitTmpSize));
      CHECK(cudaMalloc(&interpretBuffers[classInputIndex], classInputSize));
      CHECK(cudaMalloc(&interpretBuffers[confInputIndex], confInputSize));
      CHECK(cudaMalloc(&bboxInput, bboxInputSize));
      CHECK(cudaMalloc(&interpretBuffers[classOutputIndex], classOutputSize));
      CHECK(cudaMalloc(&interpretBuffers[confOutputIndex], confOutputSize));
 
+     int pool3_dims[] = {batchSize, SPLIT_C, CONVOUT_H*2, CONVOUT_W*2};
+     int split_dims[] = {batchSize, SPLIT_C, CONVOUT_H, CONVOUT_W};
+     int split_tmp_dims[] = {batchSize, SPLIT_C, CONVOUT_H*2, CONVOUT_W};
      int convout_dims[] = {batchSize, CONVOUT_C, CONVOUT_H, CONVOUT_W};
      int classInputDims[] = {batchSize, CLASS_SLICE_C, CONVOUT_H, CONVOUT_W};
      int confInputDims[] = {batchSize, CONF_SLICE_C, CONVOUT_H, CONVOUT_W};
@@ -485,7 +579,14 @@ static void setUpDevice(IExecutionContext *convContext, IExecutionContext *inter
      int bboxTransDims[] = {batchSize, CONVOUT_H, CONVOUT_W, ANCHORS_PER_GRID, OUTPUT_BBOX_SIZE};
      int transAxes[] = {0, 3, 4, 1, 2};
      transAxesDevice = (int *)cloneMem(transAxes, sizeof(int) * 5, H2D);
-     convoutTensor = createTensor((float *)convBuffers[convoutIndex], 4, convout_dims);
+     pool3Tensor = createTensor((float *)conv1Buffers[pool3Index], 4, pool3_dims);
+     split1Tensor = createTensor((float *)conv2Buffers[split1Index], 4, split_dims);
+     split2Tensor = createTensor((float *)conv2Buffers[split2Index], 4, split_dims);
+     split3Tensor = createTensor((float *)conv2Buffers[split3Index], 4, split_dims);
+     split4Tensor = createTensor((float *)conv2Buffers[split4Index], 4, split_dims);
+     split5Tensor = createTensor((float *)conv2Buffers[split5Index], 4, split_dims);
+     splitTmpTensor = createTensor(splitTmp, 4, split_tmp_dims);
+     convoutTensor = createTensor((float *)conv2Buffers[convoutIndex], 4, convout_dims);
      classInputTensor = createTensor((float *)interpretBuffers[classInputIndex], 4, classInputDims);
      confInputTensor = createTensor((float *)interpretBuffers[confInputIndex], 4, confInputDims);
      bboxInputTensor = createTensor(bboxInput, 4, bboxInputDims);
@@ -541,17 +642,30 @@ static void setUpDevice(IExecutionContext *convContext, IExecutionContext *inter
 }
 
 // batch size is 1
-static void doInference(IExecutionContext *convContext, IExecutionContext *interpretContext, float* input, int inputSize, int img_width, int img_height, int x_shift, int y_shift, struct predictions *preds, int batchSize)
+static void doInference(IExecutionContext *conv1Context, IExecutionContext *conv2Context, IExecutionContext *interpretContext, float* input, int inputSize, int img_width, int img_height, int x_shift, int y_shift, struct predictions *preds, int batchSize)
 {
      CHECK(cudaEventRecord(start_detect, 0));
 
      // DMA the input to the GPU,  execute the batch asynchronously, and DMA it back:
-     CHECK(cudaMemcpyAsync(convBuffers[inputIndex], input, inputSize, cudaMemcpyHostToDevice, stream));
+     CHECK(cudaMemcpyAsync(conv1Buffers[inputIndex], input, inputSize, cudaMemcpyHostToDevice, stream));
 
-     convContext->enqueue(batchSize, convBuffers, stream, nullptr);
+     conv1Context->enqueue(batchSize, conv1Buffers, stream, nullptr);
+     sliceTensor(pool3Tensor, splitTmpTensor, 3, 0, CONVOUT_W);
+     sliceTensor(splitTmpTensor, split1Tensor, 2, 0, CONVOUT_H);
+     sliceTensor(pool3Tensor, splitTmpTensor, 3, 0, CONVOUT_W);
+     sliceTensor(splitTmpTensor, split2Tensor, 2, CONVOUT_H, CONVOUT_H);
+     sliceTensor(pool3Tensor, splitTmpTensor, 3, CONVOUT_W, CONVOUT_W);
+     sliceTensor(splitTmpTensor, split3Tensor, 2, 0, CONVOUT_H);
+     sliceTensor(pool3Tensor, splitTmpTensor, 3, CONVOUT_W, CONVOUT_W);
+     sliceTensor(splitTmpTensor, split4Tensor, 2, CONVOUT_H, CONVOUT_H);
+     sliceTensor(pool3Tensor, splitTmpTensor, 3, CONVOUT_W/2, CONVOUT_W);
+     sliceTensor(splitTmpTensor, split5Tensor, 2, CONVOUT_H/2, CONVOUT_H);
+
+     conv2Context->enqueue(batchSize, conv2Buffers, stream, nullptr);
      sliceTensor(convoutTensor, classInputTensor, 1, 0, CLASS_SLICE_C);
      sliceTensor(convoutTensor, confInputTensor, 1, CLASS_SLICE_C, CONF_SLICE_C);
      sliceTensor(convoutTensor, bboxInputTensor, 1, CLASS_SLICE_C + CONF_SLICE_C, BBOX_SLICE_C);
+
      interpretContext->enqueue(batchSize, interpretBuffers, stream, nullptr);
      transposeTensor(classOutputTensor, classTransTensor, transAxesDevice, classTransWorkspace);
      transposeTensor(confOutputTensor, confTransTensor, transAxesDevice, confTransWorkspace);
@@ -627,8 +741,17 @@ static void cleanUp()
 
      // release the stream and the buffers
      CHECK(cudaStreamDestroy(stream));
-     CHECK(cudaFree(convBuffers[inputIndex]));
-     CHECK(cudaFree(convBuffers[convoutIndex]));
+     CHECK(cudaFree(conv1Buffers[inputIndex]));
+     CHECK(cudaFree(conv1Buffers[pool3Index]));
+     CHECK(cudaFree(conv1Buffers[fire9OutIndex]));
+     CHECK(cudaFree(conv2Buffers[split1Index]));
+     CHECK(cudaFree(conv2Buffers[split2Index]));
+     CHECK(cudaFree(conv2Buffers[split3Index]));
+     CHECK(cudaFree(conv2Buffers[split4Index]));
+     CHECK(cudaFree(conv2Buffers[split5Index]));
+     // CHECK(cudaFree(conv2Buffers[fire9InIndex]));
+     CHECK(cudaFree(conv2Buffers[convoutIndex]));
+     CHECK(cudaFree(splitTmp));
      CHECK(cudaFree(interpretBuffers[classInputIndex]));
      CHECK(cudaFree(interpretBuffers[confInputIndex]));
      CHECK(cudaFree(bboxInput));
@@ -657,6 +780,13 @@ static void cleanUp()
      CHECK(cudaFree(finalBboxTensor->data));
 
      // free remaining tensor structure (already freed their data)
+     freeTensor(pool3Tensor, 0);
+     freeTensor(split1Tensor, 0);
+     freeTensor(split2Tensor, 0);
+     freeTensor(split3Tensor, 0);
+     freeTensor(split4Tensor, 0);
+     freeTensor(split5Tensor, 0);
+     freeTensor(splitTmpTensor, 0);
      freeTensor(convoutTensor, 0);
      freeTensor(classInputTensor, 0);
      freeTensor(confInputTensor, 0);
@@ -810,12 +940,15 @@ static size_t inputSize;
 static float *data;
 static float *anchors;
 static struct predictions preds;
-static IHostMemory *convModelStream{ nullptr };
+static IHostMemory *conv1ModelStream{ nullptr };
+static IHostMemory *conv2ModelStream{ nullptr };
 static IHostMemory *interpretModelStream{ nullptr };
 static IRuntime* runtime;
-static ICudaEngine* convEngine;
+static ICudaEngine* conv1Engine;
+static ICudaEngine* conv2Engine;
 static ICudaEngine* interpretEngine;
-static IExecutionContext *convContext;
+static IExecutionContext *conv1Context;
+static IExecutionContext *conv2Context;
 static IExecutionContext *interpretContext;
 
 void sdt_infer_init(const char *wts)
@@ -833,17 +966,19 @@ void sdt_infer_init(const char *wts)
      timeMisc = 0;
 
      // create engines
-     APIToModel(INPUT_N, &convModelStream, &interpretModelStream, wts);
+     APIToModel(INPUT_N, &conv1ModelStream, &conv2ModelStream, &interpretModelStream, wts);
 
      // deserialize engines
      runtime = createInferRuntime(gLogger);
-     convEngine = runtime->deserializeCudaEngine(convModelStream->data(), convModelStream->size(), nullptr);
+     conv1Engine = runtime->deserializeCudaEngine(conv1ModelStream->data(), conv1ModelStream->size(), nullptr);
+     conv2Engine = runtime->deserializeCudaEngine(conv2ModelStream->data(), conv2ModelStream->size(), nullptr);
      interpretEngine = runtime->deserializeCudaEngine(interpretModelStream->data(), interpretModelStream->size(), nullptr);
-     convContext = convEngine->createExecutionContext();
+     conv1Context = conv1Engine->createExecutionContext();
+     conv2Context = conv2Engine->createExecutionContext();
      interpretContext = interpretEngine->createExecutionContext();
 
      // malloc device memory
-     setUpDevice(convContext, interpretContext, anchors, INPUT_N);
+     setUpDevice(conv1Context, conv2Context, interpretContext, anchors, INPUT_N);
 }
 
 void sdt_infer_detect(unsigned char *input, int height, int width, int x_shift, int y_shift,
@@ -861,7 +996,7 @@ void sdt_infer_detect(unsigned char *input, int height, int width, int x_shift, 
      frame = cv::Mat(INPUT_H, INPUT_W, CV_8UC(3));
      preprocessFrame(frame, frame_origin, INPUT_W, INPUT_H, &img_width, &img_height);
      prepareData(data, frame);
-     doInference(convContext, interpretContext, data, inputSize, img_width, img_height, x_shift, y_shift, &preds, INPUT_N);
+     doInference(conv1Context, conv2Context, interpretContext, data, inputSize, img_width, img_height, x_shift, y_shift, &preds, INPUT_N);
      detectionFilter(&preds, NMS_THRESH, PROB_THRESH);
      // drawBbox(frame_origin, &preds);
      // cv::imshow("detection", frame_origin);
@@ -893,9 +1028,11 @@ void sdt_infer_cleanup(void)
      cleanUp();
 
      // destroy the engine
-     convContext->destroy();
+     conv1Context->destroy();
+     conv2Context->destroy();
      interpretContext->destroy();
-     convEngine->destroy();
+     conv1Engine->destroy();
+     conv2Engine->destroy();
      interpretEngine->destroy();
      runtime->destroy();
 
