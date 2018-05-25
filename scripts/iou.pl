@@ -50,8 +50,8 @@ foreach (readdir XML_DIR) {
   my $area_det = &area($xmin, $ymin, $xmax, $ymax);
   my $area_gt = &area($xmin_gt, $ymin_gt, $xmax_gt, $ymax_gt);
 
-  my $x_shift = 0;
-  my $y_shift = 0;
+  my $x_shift = 8;
+  my $y_shift = 8;
   # if ($shape_str eq "1280x720") {
   #   $x_shift = 29;
   #   $y_shift = 29;

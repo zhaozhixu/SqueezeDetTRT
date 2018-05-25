@@ -13,6 +13,7 @@
 *.so
 *.bak4so
 *.log
+core
 testso
 testtrt
 sqdtrt

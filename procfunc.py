@@ -131,14 +131,14 @@ def detectionAndTracking(inputImageData, batchNum):
         xmax = res[0][3]
         ymax = res[0][4]
 
-        if data.shape[0] == 720:
-            x_shift = 29
-            y_shift = 29
-        else:
-            x_shift = 15
-            y_shift = 15
-        # x_shift = 0
-        # y_shift = 0
+        #if data.shape[0] == 720:
+        #    x_shift = 29
+        #    y_shift = 29
+        #else:
+        #    x_shift = 15
+        #    y_shift = 15
+        x_shift = 0
+        y_shift = 0
 
         result[i, 0] = xmin - x_shift
         result[i, 1] = xmax - x_shift

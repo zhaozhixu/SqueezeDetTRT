@@ -162,6 +162,11 @@ __global__ void transposeTensorKernel(float *src, float *dst, int ndim, int *s_d
      dst[di] = src[si];
 }
 
+/* static inline __device__ float sigmoid(float x) */
+/* { */
+/*      return 1 / (1 + expf(-x)); */
+/* } */
+
 __global__ void transformBboxSQDKernel(float *delta, float *anchor, float *res, float width, float height, float img_width, float img_height, int x_shift, int y_shift, int block_size, int total)
 {
      int di = blockIdx.x * block_size + threadIdx.x;
@@ -181,6 +186,8 @@ __global__ void transformBboxSQDKernel(float *delta, float *anchor, float *res, 
      int si = di * 4;
      float d[4] = {delta[si], delta[si+1], delta[si+2], delta[si+3]};
      float a[4] = {anchor[si], anchor[si+1], anchor[si+2], anchor[si+3]};
+     /* d[0] = 1.2*(sigmoid(d[0])-0.5); */
+     /* d[1] = 1.2*(sigmoid(d[1])-0.5); */
      /* compute and put 4 result elements to res, according to SqueezeDet's source code */
 
      /* TODO: don't know why (maybe the resize), always has some shift compared to groundtruth*/
