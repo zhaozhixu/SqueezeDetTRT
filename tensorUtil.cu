@@ -2,9 +2,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <cuda_runtime.h>
 #include <thrust/sort.h>
 #include <thrust/execution_policy.h>
-#include "tensorCuda.h"
+/* #include "tensorCuda.h" */
 #include "tensorUtil.h"
 #include "errorHandle.h"
 #include "sdt_alloc.h"
@@ -12,8 +13,196 @@
 #define MAXDIM 8
 #define max(a, b) ((a) > (b) ? (a) : (b))
 #define min(a, b) ((a) < (b) ? (a) : (b))
+#define MAX_THREADS_PER_BLOCK 1024
+#define BLOCK_SIZE MAX_THREADS_PER_BLOCK
 
 static float EPSILON = 1e-16;
+
+static __device__ float E = 2.718281828;
+
+static __device__ int getIndex(int *ids, int ndim, int *dims)
+{
+     int i, id;
+     for (i = 0, id = ids[0]; i < ndim-1; i++)
+          id = dims[i+1] * id + ids[i+1];
+     return id;
+}
+
+static __device__ void getIndexes(int id, int *ids, int ndim, int *dims)
+{
+     for (int i = ndim-1; i >=0; i--) {
+          ids[i] = id % dims[i];
+          id = id / dims[i];
+     }
+}
+
+/* __global__ void sliceTensorKernel(float *src, float *dst, int sdim, int ddim, int start, int block_size) */
+/* { */
+/*      int di = blockIdx.x * block_size + threadIdx.x; */
+/*      /\* si is the index of src elements to be copied. */
+/*         The "block index" of src[si] is (blockIdx.x / ddim * sdim + blockIdx.x % ddim + start) *\/ */
+/*      int si = (blockIdx.x / ddim * sdim + blockIdx.x % ddim + start) * block_size + threadIdx.x; */
+/*      dst[di] = src[si]; */
+/* } */
+
+/* __global__ void sliceTensorKernel(float *src, float *dst, int ndim, int *sdims, int *ddims, int naxis, int *axes, int *n_pick_ids, int **pick_ids, int *sids, int *dids, int block_size, int total) */
+/* { */
+/*      int di = blockIdx.x * block_size + threadIdx.x; */
+/*      if (di >= total) */
+/*           return; */
+
+/*      int *t_sids = sids + di * ndim; */
+/*      int *t_dids = dids + di * ndim; */
+/*      getIndexes(di, t_dids, ndim, ddims); */
+/*      int i, j; */
+/*      for (i = 0, j = 0; i < ndim; i++) { */
+/*           if (i != axes[j]) { */
+/*                t_sids[i] = t_dids[i]; */
+/*           } else { */
+/*                t_sids[i] = pick_ids[j][t_dids[i]]; */
+/*                j++; */
+/*           } */
+/*      } */
+
+/*      int si = getIndex(t_sids, ndim, sdims); */
+/*      dst[di] = src[si]; */
+/* } */
+
+__global__ void sliceTensorKernel(float *src, float *dst, int start, int s_vol, int d_vol, int vol, int block_size, int total)
+{
+     int di = blockIdx.x * block_size + threadIdx.x;
+     if (di >= total)
+          return;
+     int si = di / d_vol * s_vol + di % d_vol + start * vol;
+     dst[di] = src[si];
+}
+
+__global__ void splitTensor2x2Kernel(float *src, float *dst1, float *dst2, float *dst3, float *dst4, int *sdims, int *ddims, int block_size, int total)
+{
+     int si = blockIdx.x * block_size + threadIdx.x;
+     if (si >= total)
+          return;
+
+     int sids[4], dids[4], di;
+     int ndim = 4;
+     float *dst;
+
+     getIndexes(si, sids, ndim, sdims);
+     dids[0] = sids[0];
+     dids[1] = sids[1];
+     if (sids[2]%2 == 0 && sids[3]%2 == 0) {
+          dst = dst1;
+          dids[2] = sids[2]/2;
+          dids[3] = sids[3]/2;
+     }
+     else if (sids[2]%2 == 0 && sids[3]%2 != 0) {
+          dst = dst2;
+          dids[2] = sids[2]/2;
+          dids[3] = (sids[3]-1)/2;
+     }
+     else if (sids[2]%2 != 0 && sids[3]%2 == 0) {
+          dst = dst3;
+          dids[2] = (sids[2]-1)/2;
+          dids[3] = sids[3]/2;
+     }
+     else {
+          dst = dst4;
+          dids[2] = (sids[2]-1)/2;
+          dids[3] = (sids[3]-1)/2;
+     }
+     di = getIndex(dids, ndim, ddims);
+     dst[di] = src[si];
+}
+
+__global__ void reduceArgMaxKernel(float *src, float *dst, float *arg, int dim_size, int reduce_vol, int batch_vol, int block_size, int total)
+{
+     int di = blockIdx.x * block_size + threadIdx.x;
+     if (di >= total)
+          return;
+
+     /* src[si] is the first element in this thread to be compared, then
+        si = batch_vol * batch + (di - reduce_vol * batch),
+        where batch = di / reduce_vol,
+        which is the same as the following code: */
+     int si = (batch_vol - reduce_vol) * (di / reduce_vol) + di;
+     float now = src[si], max = now;
+     int maxi = 0;
+     for (int i = 1; i < dim_size; i++) {
+          now = src[si+i*reduce_vol];
+          if (now > max) {
+               max = now;
+               maxi = i;
+          }
+     }
+     dst[di] = max;
+     arg[di] = maxi;
+}
+
+__global__ void multiplyElementKernel(float *src1, float *src2, float *dst, int block_size, int total)
+{
+     int di = blockIdx.x * block_size + threadIdx.x;
+     if (di >= total)
+          return;
+     dst[di] = src1[di] * src2[di];
+}
+
+__global__ void transposeTensorKernel(float *src, float *dst, int ndim, int *s_dims, int *d_dims, int *s_ids, int *d_ids, int *axes, int block_size, int total)
+{
+     int di = blockIdx.x * block_size + threadIdx.x;
+     if (di >= total)
+          return;
+
+     int *t_s_ids = s_ids + di * ndim;
+     int *t_d_ids = d_ids + di * ndim;
+     getIndexes(di, t_d_ids, ndim, d_dims);
+     for (int i = 0; i < ndim; i++)
+          t_s_ids[axes[i]] = t_d_ids[i];
+     int si = getIndex(t_s_ids, ndim, s_dims);
+
+     dst[di] = src[si];
+}
+
+__global__ void transformBboxSQDKernel(float *delta, float *anchor, float *res, float width, float height, float img_width, float img_height, int x_shift, int y_shift, int block_size, int total)
+{
+     int di = blockIdx.x * block_size + threadIdx.x;
+     if (di >= total)
+          return;
+
+     /* int batch_idx = di / anchor_num; */
+     /* now only support batch_size = 1 */
+     float x_scale = 1.0 * img_width / width;
+     float y_scale = 1.0 * img_height / height;
+
+     /* (not used) si is the index of the first elements to be computed in the thread, then
+        si = 4 * anchor_num * batch_idx + (di - anchor_num * batch_idx),
+        which is the same as the following code: */
+     /* int si = 3 * anchor_num * batch_idx  + di; */
+     /* take 4 elements from each of delta and anchor */
+     int si = di * 4;
+     float d[4] = {delta[si], delta[si+1], delta[si+2], delta[si+3]};
+     float a[4] = {anchor[si], anchor[si+1], anchor[si+2], anchor[si+3]};
+     /* compute and put 4 result elements to res, according to SqueezeDet's source code */
+
+     /* TODO: don't know why (maybe the resize), always has some shift compared to groundtruth*/
+     float cx = (a[0] + d[0] * a[2]) * x_scale + x_shift;
+     float cy = (a[1] + d[1] * a[3]) * y_scale + y_shift;
+     float w = (a[2] * (d[2] < 1 ? expf(d[2]) : d[2] * E)) * x_scale;
+     float h = (a[3] * (d[3] < 1 ? expf(d[3]) : d[3] * E)) * y_scale;
+     res[si] = min(max(cx - w * 0.5, 0), img_width - 1);
+     res[si+1] = min(max(cy - h * 0.5, 0), img_height - 1);
+     res[si+2] = max(min(cx + w * 0.5, img_width - 1), 0);
+     res[si+3] = max(min(cy + h * 0.5, img_height - 1), 0);
+}
+
+__global__ void pickElementsKernel(float *src, float *dst, int *idx, int stride, int block_size, int total)
+{
+     int di = blockIdx.x * block_size + threadIdx.x;
+     if (di >= total)
+          return;
+     int si = idx[di];
+     for (int i = 0; i < stride; i++)
+          dst[di*stride+i] = src[si*stride+i];
+}
 
 static void assertTensor(const Tensor *tensor)
 {
@@ -24,6 +213,10 @@ static void assertTensor(const Tensor *tensor)
 
 int isTensorValid(const Tensor *tensor)
 {
+     assert(tensor);
+     assert(tensor->data);
+     assert(tensor->ndim < MAXDIM && tensor->ndim > 0 );
+     assert(tensor->len == computeLength(tensor->ndim, tensor->dims));
      return (tensor && tensor->data &&
              tensor->ndim < MAXDIM && tensor->ndim > 0 &&
              tensor->len == computeLength(tensor->ndim, tensor->dims));
@@ -349,10 +542,54 @@ Tensor *createSlicedTensor(const Tensor *src, int dim, int start, int len)
 /*      sliceTensorKernel<<<block_num, block_size>>>(src->data, dst->data, sdim, ddim, start, block_size); */
 /*      return dst; */
 /* } */
+/* axes should be in ascending order */
+/* Tensor *sliceTensor(const Tensor *src, Tensor *dst, int naxis, int *axes, int *starts, int *ends, int *strides, int **workspace) */
+/* { */
+/*      assert(isTensorValid(src) && isTensorValid(dst)); */
+/*      assert(isDeviceMem(src->data) && isDeviceMem(dst->data)); */
+/*      assert(dst->ndim == src->ndim); */
+/*      for (int i = 0; i < dst->ndim; i++) */
+/*           assert(i == dim ? dst->dims[i] == len : dst->dims[i] == src->dims[i]); */
+
+/*      int i; */
+/*      int *sdims, *ddims, *axes_device, *n_pick_ids_host, **pick_ids_host, *n_pick_ids_device, **pick_ids_device, *sids, *dids, *ends_tmp; */
+/*      sdims = (int *)cloneMem(src->dims, sizeof(int)*src->ndim, H2D); */
+/*      ddims = (int *)cloneMem(dst->dims, sizeof(int)*dst->ndim, H2D); */
+/*      axes_device = (int *)cloneMem(axes, sizeof(int)*naxis, H2D); */
+/*      n */
+/*      ends_tmp = (int *)cloneMem(ends, sizeof(int)*naxis, H2H); */
+/*      if (!workspace) { */
+/*           checkError(cudaMalloc(&sids, sizeof(int) * dst->ndim * dst->len)); */
+/*           checkError(cudaMalloc(&dids, sizeof(int) * dst->ndim * dst->len)); */
+/*      } else { */
+/*           sids = workspace[0]; */
+/*           dids = workspace[1]; */
+/*      } */
+/*      for (i = 0; i < naxis; i++) { */
+/*           if (ends_tmp[i] > src->dims[axes[i]]) */
+/*                ends_tmp[i] = src->dims[axes[i]]; */
+/*           n_pick_ids[i] = */
+/*      } */
+
+/*      int thread_num, block_size, block_num; /\* block size and number of cuda threads *\/ */
+/*      thread_num = dst->len; */
+/*      block_size = MAX_THREADS_PER_BLOCK; */
+/*      block_num = thread_num / block_size + 1; */
+
+/*      sliceTensorKernel<<<block_num, block_size>>>(src->data, dst->data, start, s_vol, d_vol, vol, block_size, thread_num); */
+
+/*      checkError(cudaFree(sdims)); */
+/*      checkError(cudaFree(ddims)); */
+/*      checkError(cudaFree(axes_device)); */
+/*      checkError(cudaFree(n_pick_ids)); */
+/*      sdt_free(ends_tmp); */
+/*      return dst; */
+/* } */
 
 Tensor *sliceTensor(const Tensor *src, Tensor *dst, int dim, int start, int len)
 {
-     assert(isTensorValid(src) && isTensorValid(dst));
+     assert(isTensorValid(src));
+     assert(isTensorValid(dst));
      assert(isDeviceMem(src->data) && isDeviceMem(dst->data));
      assert(dst->ndim == src->ndim);
      for (int i = 0; i < dst->ndim; i++)
@@ -372,11 +609,54 @@ Tensor *sliceTensor(const Tensor *src, Tensor *dst, int dim, int start, int len)
      return dst;
 }
 
+void splitTensor2x2(const Tensor *src, Tensor *dst1, Tensor *dst2, Tensor *dst3, Tensor *dst4)
+{
+     assert(isTensorValid(src));
+     assert(isTensorValid(dst1));
+     assert(isTensorValid(dst2));
+     assert(isTensorValid(dst3));
+     assert(isTensorValid(dst4));
+     assert(isDeviceMem(src->data));
+     assert(isDeviceMem(dst1->data));
+     assert(isDeviceMem(dst2->data));
+     assert(isDeviceMem(dst3->data));
+     assert(isDeviceMem(dst4->data));
+     assert(src->ndim == 4);
+     assert(dst1->ndim == src->ndim);
+     assert(dst2->ndim == src->ndim);
+     assert(dst3->ndim == src->ndim);
+     assert(dst4->ndim == src->ndim);
+     assert(dst1->dims[0] == src->dims[0] && dst1->dims[1] == src->dims[1]);
+     assert(dst2->dims[0] == src->dims[0] && dst2->dims[1] == src->dims[1]);
+     assert(dst3->dims[0] == src->dims[0] && dst3->dims[1] == src->dims[1]);
+     assert(dst4->dims[0] == src->dims[0] && dst4->dims[1] == src->dims[1]);
+     assert(dst1->dims[2] == src->dims[2]/2);
+     assert(dst2->dims[2] == src->dims[2]/2);
+     assert(dst3->dims[2] == src->dims[2]/2);
+     assert(dst4->dims[2] == src->dims[2]/2);
+     assert(dst1->dims[3] == src->dims[3]/2);
+     assert(dst2->dims[3] == src->dims[3]/2);
+     assert(dst3->dims[3] == src->dims[3]/2);
+     assert(dst4->dims[3] == src->dims[3]/2);
+
+     int *sdims = (int *)cloneMem(src->dims, sizeof(int)*src->len, H2D);
+     int *ddims = (int *)cloneMem(dst1->dims, sizeof(int)*dst1->len, H2D);
+     int thread_num = src->len;
+     int block_size = MAX_THREADS_PER_BLOCK;
+     int block_num = thread_num / block_size + 1;
+
+     splitTensor2x2Kernel<<<block_num, block_size>>>(src->data, dst1->data, dst2->data, dst3->data, dst4->data, sdims, ddims, block_size, thread_num);
+
+     checkError(cudaFree(sdims));
+     checkError(cudaFree(ddims));
+}
+
 /* in-place reshape tensor */
 Tensor *reshapeTensor(const Tensor *src, int newNdim, const int *newDims)
 {
      assert(isTensorValid(src));
      assert(newDims);
+     /* fprintf(stderr, "len = %d, compute = %d\n", src->len, computeLength(newNdim, newDims)); */
      assert(src->len == computeLength(newNdim, newDims));
      Tensor *dst = createTensor(src->data, newNdim, newDims); /* new tensor */
      return dst;

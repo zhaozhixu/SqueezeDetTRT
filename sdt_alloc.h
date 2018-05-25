@@ -3,8 +3,16 @@
 
 #include <stdlib.h>
 
-void *sdt_alloc(size_t size);
-char *sdt_path_alloc(size_t *sizep);
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+	void *sdt_alloc(size_t size);
+	char *sdt_path_alloc(size_t *sizep);
+
+#ifdef __cplusplus
+}
+#endif
 
 #define sdt_free free
 
