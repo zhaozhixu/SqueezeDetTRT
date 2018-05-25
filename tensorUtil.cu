@@ -77,6 +77,43 @@ __global__ void sliceTensorKernel(float *src, float *dst, int start, int s_vol, 
      dst[di] = src[si];
 }
 
+__global__ void splitTensor2x2Kernel(float *src, float *dst1, float *dst2, float *dst3, float *dst4, int *sdims, int *ddims, int block_size, int total)
+{
+     int si = blockIdx.x * block_size + threadIdx.x;
+     if (si >= total)
+          return;
+
+     int sids[4], dids[4], di;
+     int ndim = 4;
+     float *dst;
+
+     getIndexes(si, sids, ndim, sdims);
+     dids[0] = sids[0];
+     dids[1] = sids[1];
+     if (sids[2]%2 == 0 && sids[3]%2 == 0) {
+          dst = dst1;
+          dids[2] = sids[2]/2;
+          dids[3] = sids[3]/2;
+     }
+     else if (sids[2]%2 == 0 && sids[3]%2 != 0) {
+          dst = dst2;
+          dids[2] = sids[2]/2;
+          dids[3] = (sids[3]-1)/2;
+     }
+     else if (sids[2]%2 != 0 && sids[3]%2 == 0) {
+          dst = dst3;
+          dids[2] = (sids[2]-1)/2;
+          dids[3] = sids[3]/2;
+     }
+     else {
+          dst = dst4;
+          dids[2] = (sids[2]-1)/2;
+          dids[3] = (sids[3]-1)/2;
+     }
+     di = getIndex(dids, ndim, ddims);
+     dst[di] = src[si];
+}
+
 __global__ void reduceArgMaxKernel(float *src, float *dst, float *arg, int dim_size, int reduce_vol, int batch_vol, int block_size, int total)
 {
      int di = blockIdx.x * block_size + threadIdx.x;
@@ -570,6 +607,48 @@ Tensor *sliceTensor(const Tensor *src, Tensor *dst, int dim, int start, int len)
 
      sliceTensorKernel<<<block_num, block_size>>>(src->data, dst->data, start, s_vol, d_vol, vol, block_size, thread_num);
      return dst;
+}
+
+void splitTensor2x2(const Tensor *src, Tensor *dst1, Tensor *dst2, Tensor *dst3, Tensor *dst4)
+{
+     assert(isTensorValid(src));
+     assert(isTensorValid(dst1));
+     assert(isTensorValid(dst2));
+     assert(isTensorValid(dst3));
+     assert(isTensorValid(dst4));
+     assert(isDeviceMem(src->data));
+     assert(isDeviceMem(dst1->data));
+     assert(isDeviceMem(dst2->data));
+     assert(isDeviceMem(dst3->data));
+     assert(isDeviceMem(dst4->data));
+     assert(src->ndim == 4);
+     assert(dst1->ndim == src->ndim);
+     assert(dst2->ndim == src->ndim);
+     assert(dst3->ndim == src->ndim);
+     assert(dst4->ndim == src->ndim);
+     assert(dst1->dims[0] == src->dims[0] && dst1->dims[1] == src->dims[1]);
+     assert(dst2->dims[0] == src->dims[0] && dst2->dims[1] == src->dims[1]);
+     assert(dst3->dims[0] == src->dims[0] && dst3->dims[1] == src->dims[1]);
+     assert(dst4->dims[0] == src->dims[0] && dst4->dims[1] == src->dims[1]);
+     assert(dst1->dims[2] == src->dims[2]/2);
+     assert(dst2->dims[2] == src->dims[2]/2);
+     assert(dst3->dims[2] == src->dims[2]/2);
+     assert(dst4->dims[2] == src->dims[2]/2);
+     assert(dst1->dims[3] == src->dims[3]/2);
+     assert(dst2->dims[3] == src->dims[3]/2);
+     assert(dst3->dims[3] == src->dims[3]/2);
+     assert(dst4->dims[3] == src->dims[3]/2);
+
+     int *sdims = (int *)cloneMem(src->dims, sizeof(int)*src->len, H2D);
+     int *ddims = (int *)cloneMem(dst1->dims, sizeof(int)*dst1->len, H2D);
+     int thread_num = src->len;
+     int block_size = MAX_THREADS_PER_BLOCK;
+     int block_num = thread_num / block_size + 1;
+
+     splitTensor2x2Kernel<<<block_num, block_size>>>(src->data, dst1->data, dst2->data, dst3->data, dst4->data, sdims, ddims, block_size, thread_num);
+
+     checkError(cudaFree(sdims));
+     checkError(cudaFree(ddims));
 }
 
 /* in-place reshape tensor */

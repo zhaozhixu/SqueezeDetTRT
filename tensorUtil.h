@@ -43,6 +43,7 @@ extern "C" {
      Tensor *sliceTensor(const Tensor *src, Tensor *dst, int dim, int start, int len);
 /* Tensor *creatSlicedTensorCuda(const Tensor *src, int dim, int start, int len); */
 /* void *sliceTensorCuda(const Tensor *src, Tensor *dst, int dim, int start, int len); */
+     void splitTensor2x2(const Tensor *src, Tensor *dst1, Tensor *dst2, Tensor *dst3, Tensor *dst4);
      Tensor *reshapeTensor(const Tensor *src, int newNdim, const int *newDims);
      Tensor *createReducedTensor(const Tensor *src, int dim);
      void *reduceArgMax(const Tensor *src, Tensor *dst, Tensor *arg, int dim);
