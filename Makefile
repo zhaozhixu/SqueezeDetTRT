@@ -9,6 +9,7 @@ LDFLAGS = $(CFLAGS)
 
 ifdef DEBUG
 CFLAGS += -g -O0 -DDEBUG
+# CFLAGS += -g -O0
 CUFLAGS += -lineinfo
 LDFLAGS += -g -O0
 else

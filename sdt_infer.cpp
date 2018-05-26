@@ -852,10 +852,16 @@ static float *prepareAnchors(const float *anchor_shape, int width, int height, i
      float anchors[H * W * B * 4];
      int i, j, k;
 
+     // for (i = 1; i <= W; i++)
+     //      center_x[i-1] = i * width / (W + 1.0);
+     // for (i = 1; i <= H; i++)
+     //      center_y[i-1] = i * height / (H + 1.0);
+
      for (i = 1; i <= W; i++)
-          center_x[i-1] = i * width / (W + 1.0);
+          center_x[i-1] = ((float)i - 0.5) * width / (W + 0.0);
      for (i = 1; i <= H; i++)
-          center_y[i-1] = i * height / (H + 1.0);
+          center_y[i-1] = ((float)i - 0.5) * height / (H + 0.0);
+
 
      int h_vol = W * B * 4;
      int w_vol = B * 4;
