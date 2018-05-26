@@ -29,18 +29,18 @@
 
 static const int INPUT_N = 1;   // one image at a time
 static const int INPUT_C = 3;
-// static const int INPUT_H = 368;
-// static const int INPUT_W = 640;
-static const int INPUT_H = 512;
-static const int INPUT_W = 896;
+static const int INPUT_H = 368;
+static const int INPUT_W = 640;
+// static const int INPUT_H = 512;
+// static const int INPUT_W = 896;
 
 // static const int CONVOUT_C = 108;
 // static const int CONVOUT_C = 144;
-static const int CONVOUT_C = 153;
-// static const int CONVOUT_H = 23;
-// static const int CONVOUT_W = 40;
-static const int CONVOUT_H = 32;
-static const int CONVOUT_W = 56;
+static const int CONVOUT_C = 340;
+static const int CONVOUT_H = 23;
+static const int CONVOUT_W = 40;
+// static const int CONVOUT_H = 32;
+// static const int CONVOUT_W = 56;
 
 static const int SPLIT_C = 128;
 static const int FIRE9_C = 512;
@@ -51,9 +51,13 @@ static const float CONSTS_VALUE = 0.1; // for concatation
 
 // static const int CLASS_SLICE_C = 63;
 // static const int CLASS_SLICE_C = 99;
-static const int CLASS_SLICE_C = 108;
-static const int CONF_SLICE_C = 9;
-static const int BBOX_SLICE_C = 36;
+// static const int CLASS_SLICE_C = 108;
+// static const int CONF_SLICE_C = 9;
+// static const int BBOX_SLICE_C = 36;
+static const int CLASS_SLICE_C = 240;
+static const int CONF_SLICE_C = 20;
+static const int BBOX_SLICE_C = 80;
+
 
 // static const int OUTPUT_CLS_SIZE = 7;
 // static const int OUTPUT_CLS_SIZE = 11;
@@ -88,7 +92,8 @@ static const char* CLASS_OUTPUT_NAME = "pred_class_probs";
 static const char* CONF_OUTPUT_NAME = "pred_confidence_score";
 // static const char* BBOX_OUTPUT_NAME = "bbox_delta";
 
-static const int ANCHORS_PER_GRID = 9;
+// static const int ANCHORS_PER_GRID = 9;
+static const int ANCHORS_PER_GRID = 20;
 static const int ANCHOR_SIZE = 4;
 // static const float ANCHOR_SHAPE[] = {36, 37, 366, 174, 115, 59,
 //                               162, 87, 38, 90, 258, 173,
@@ -96,9 +101,14 @@ static const int ANCHOR_SIZE = 4;
 // static const float ANCHOR_SHAPE[] = {229, 137, 48, 71, 289, 245,
 //                                      185, 134, 85, 142, 31, 41,
 //                                      197, 191, 237, 206, 63, 108};
-static const float ANCHOR_SHAPE[] = {1.4*229, 1.4*137, 1.4*48, 1.4*71, 1.4*289, 1.4*245,
-                                     1.4*185, 1.4*134, 1.4*85, 1.4*142, 1.4*31, 1.4*41,
-                                     1.4*197, 1.4*191, 1.4*237, 1.4*206, 1.4*63, 1.4*108};
+// static const float ANCHOR_SHAPE[] = {1.4*229, 1.4*137, 1.4*48, 1.4*71, 1.4*289, 1.4*245,
+//                                      1.4*185, 1.4*134, 1.4*85, 1.4*142, 1.4*31, 1.4*41,
+//                                      1.4*197, 1.4*191, 1.4*237, 1.4*206, 1.4*63, 1.4*108};
+static const float ANCHOR_SHAPE[] = {10, 10, 20, 20, 30, 30, 30, 60,
+                                     30, 90, 60, 30, 60, 60, 60, 90,
+                                     90, 30, 90, 60, 90, 90, 56, 121,
+                                     77, 202, 38, 103, 69, 150, 98, 49,
+                                     100, 71, 121, 81, 223, 84, 141, 210};
 
 // static const char *CLASS_NAMES[] = {"car", "pedestrian", "cyclist"};
 // static const char *CLASS_NAMES[] = {"car", "person", "riding", "bike_riding", "boat", "truck", "horse_riding"};
@@ -858,9 +868,9 @@ static float *prepareAnchors(const float *anchor_shape, int width, int height, i
      //      center_y[i-1] = i * height / (H + 1.0);
 
      for (i = 1; i <= W; i++)
-          center_x[i-1] = ((float)i - 0.5) * width / (W + 0.0);
+          center_x[i-1] = (2*i-1) * width / (W*2.0);
      for (i = 1; i <= H; i++)
-          center_y[i-1] = ((float)i - 0.5) * height / (H + 0.0);
+          center_y[i-1] = (2*i-1) * height / (H*2.0);
 
 
      int h_vol = W * B * 4;

@@ -1,5 +1,4 @@
 import os
-import matplotlib.pylab as plt
 import cv2
 import time
 import numpy as np
@@ -137,8 +136,8 @@ def detectionAndTracking(inputImageData, batchNum):
         #else:
         #    x_shift = 15
         #    y_shift = 15
-        x_shift = 0
-        y_shift = 0
+        x_shift = 15
+        y_shift = 15
 
         result[i, 0] = xmin - x_shift
         result[i, 1] = xmax - x_shift
