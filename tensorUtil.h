@@ -32,6 +32,7 @@ extern "C" {
      Tensor *mallocTensor(int ndim, const int* dims, const MallocKind mkind);
      void freeTensor(Tensor *t, int do_free_data);
 
+     void fprintShape(FILE *stream, const Tensor *tensor);
      void fprintTensor(FILE *stream, const Tensor *tensor, const char *fmt);
      void printTensor(const Tensor *tensor, const char *fmt);
      void fprintDeviceTensor(FILE *stream, const Tensor *d_tensor, const char *fmt);
