@@ -346,6 +346,20 @@ void freeTensor(Tensor *t, int do_free_data)
      sdt_free(t);
 }
 
+void fprintShape(FILE *stream, const Tensor *tensor)
+{
+     assert(tensor && tensor->dims);
+
+     int i;
+     fprintf(stream, "(");
+     for (i = 0; i < tensor->ndim; i++) {
+          fprintf(stream, "%d", tensor->dims[i]);
+          if (i != tensor->ndim-1)
+               fprintf(stream, ", ");
+     }
+     fprintf(stream, ")\n");
+}
+
 void fprintTensor(FILE *stream, const Tensor *tensor, const char *fmt)
 {
      assertTensor(tensor);
