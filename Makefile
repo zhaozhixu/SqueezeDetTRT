@@ -14,7 +14,7 @@ LDFLAGS += -g -O0
 else
 CFLAGS += -O3 -DNDEBUG
 # CFLAGS += -O0 -g
-CUFLAGS += -lineinfo
+CUFLAGS +=
 LDFLAGS += -O3
 endif
 
