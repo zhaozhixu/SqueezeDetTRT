@@ -51,7 +51,7 @@ OBJS  += $(patsubst %.cpp, $(OBJDIR)/%.o, $(wildcard *.cpp))
 CUOBJS = $(patsubst %.cu, $(OBJDIR)/%.o, $(wildcard *.cu))
 
 TRIPLE?=x86_64-linux
-CUDA_INSTALL_DIR = /usr/local/cuda-8.0
+CUDA_INSTALL_DIR = /usr/local/cuda
 CUDA_LIBDIR = lib
 INCPATHS    =-I"$(CUDA_INSTALL_DIR)/include" -I"/usr/local/include"
 LIBPATHS    =-L"$(CUDA_INSTALL_DIR)/targets/$(TRIPLE)/$(CUDA_LIBDIR)" -L"/usr/local/lib" -L"/usr/local/cuda/lib64" -L"$(CUDA_INSTALL_DIR)/$(CUDA_LIBDIR)"
