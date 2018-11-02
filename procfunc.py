@@ -63,7 +63,7 @@ def getImageNames(imgDir):
         if 'jpg' in f:
             imgname = f.split('.')[0]
             nameset1.append(imgname)
-    nameset1.sort(key = int)
+    nameset1.sort(key = str)
     for f in nameset1:
         f = f + ".jpg"
         nameset2.append(f)
@@ -112,7 +112,7 @@ def detectionAndTracking(inputImageData, batchNum):
         # if key == " ":
         #     cv2.waitKey(0)
 
-        res = detect_detect(data.ctypes.data_as(c_void_p), data.shape[0], data.shape[1], -9, -15)
+        res = detect_detect(data.ctypes.data_as(c_void_p), data.shape[0], data.shape[1], -8, -14)
         if len(res) == 0:
             result[i, 0] = -1
             result[i, 1] = -1
